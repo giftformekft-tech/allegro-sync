@@ -1,0 +1,39 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use AllegroSync\Cli\Application;
+
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "Ez a program csak parancssorból futtatható.\n");
+    exit(1);
+}
+
+if (PHP_VERSION_ID < 80100) {
+    fwrite(STDERR, "PHP 8.1 vagy újabb szükséges. Jelenlegi: " . PHP_VERSION . "\n");
+    exit(1);
+}
+
+$root = dirname(__DIR__);
+
+// Composer autoloader, ha van; különben egy minimál PSR-4 betöltő, hogy a
+// program `composer install` nélkül is fusson.
+$composer = $root . '/vendor/autoload.php';
+if (is_file($composer)) {
+    require $composer;
+} else {
+    spl_autoload_register(static function (string $class) use ($root): void {
+        $prefix = 'AllegroSync\\';
+        if (!str_starts_with($class, $prefix)) {
+            return;
+        }
+        $relative = substr($class, strlen($prefix));
+        $path = $root . '/src/' . str_replace('\\', '/', $relative) . '.php';
+        if (is_file($path)) {
+            require $path;
+        }
+    });
+}
+
+exit((new Application($root))->run($argv));

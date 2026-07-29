@@ -1,0 +1,18 @@
+# Titkos beállítások – SOHA ne kerüljön a repóba
+.env
+.env.*
+!.env.example
+config/.env
+
+# Állapottár
+var/
+*.sqlite
+*.sqlite-journal
+
+# Függőségek
+vendor/
+composer.lock
+
+# Munkafájlok
+*.log
+.DS_Store
