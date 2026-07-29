@@ -91,3 +91,35 @@ try {
 $t->assert($threw, 'Hiányzó kötelező oszlopnál beszédes hibát dob');
 
 @unlink($tmp);
+
+// --- szerződés a plugin oldali exporttal ------------------------------------
+// A formemockup plugin MG_Allegro_Export_Page::CSV_COLUMNS listája szerint ír.
+// Ha a két oldal elcsúszik, az itt bukik el, nem éles feltöltés közben.
+$t->group('CSV-szerződés a formemockup plugin exportjával');
+
+$example = dirname(__DIR__) . '/examples/export-minta.csv';
+$t->assert(is_file($example), 'A mintafájl megvan (examples/export-minta.csv)');
+
+if (is_file($example)) {
+    $expectedHeader = [
+        'sku', 'parent_sku', 'name', 'description', 'type', 'type_label',
+        'color', 'size', 'price_huf', 'stock', 'image_url',
+        'weight_g', 'brand', 'material', 'ai_content',
+    ];
+
+    $firstLine = fgets(fopen($example, 'r')) ?: '';
+    $firstLine = ltrim($firstLine, "\xEF\xBB\xBF");
+    $actualHeader = array_map('trim', explode(';', trim($firstLine)));
+
+    $t->same($expectedHeader, $actualHeader, 'A mintafájl fejléce megegyezik a plugin CSV_COLUMNS listájával');
+
+    $exampleResult = $reader->read($example);
+    $exampleValidated = $validator->validate($exampleResult['rows']);
+
+    $t->same(5, count($exampleResult['rows']), 'A mintafájl öt sora beolvasható');
+    $t->same(4, count($exampleValidated['ok']), 'Négy sor érvényes, a szándékosan hibás nem');
+
+    $first = $exampleResult['rows'][0];
+    $t->same('Póló', $first->typeLabel, 'A type_label olvasható megnevezésként érkezik');
+    $t->same('polo', $first->type, 'A type slug külön mezőben marad');
+}
