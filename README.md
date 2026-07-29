@@ -57,5 +57,7 @@ A terv **0. fázisa**: kategória-felderítő, ami a célkategóriákra kiírja,
 a GTIN kötelező-e és javasolható-e saját termék. Amíg ez a tábla nincs meg,
 keretrendszert írni kockázat.
 
+Tesztelés lépésről lépésre: [`docs/teszteles.md`](docs/teszteles.md)
+
 Részletek: [`docs/allegro-integracio-terv.md`](docs/allegro-integracio-terv.md)
 7.2 és 9. fejezet.
