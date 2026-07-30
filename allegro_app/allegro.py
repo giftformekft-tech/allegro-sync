@@ -229,7 +229,15 @@ class AllegroCatalog:
         path = self._path(category)
         normalized = [self._parameter(item) for item in parameters if isinstance(item, dict)]
         gtin = [item for item in normalized if item["is_gtin"]]
-        gtin_required = any(item["required"] or item["required_for_product"] for item in gtin)
+        # For a newly described catalog product Allegro explicitly defines the
+        # GTIN requirement through requiredForProduct. The generic `required`
+        # flag alone must not turn an optional product GTIN into a blocker.
+        gtin_required = any(
+            item["required_for_product"] and not item.get("required_if") for item in gtin
+        )
+        gtin_conditional = any(
+            item["required_for_product"] and bool(item.get("required_if")) for item in gtin
+        )
         options = category.get("options") if isinstance(category.get("options"), dict) else {}
         leaf = bool(category.get("leaf"))
         product_creation = bool(options.get("productCreationEnabled"))
@@ -243,6 +251,8 @@ class AllegroCatalog:
             "offer_creation_enabled": offer_creation,
             "gtin_present": bool(gtin),
             "gtin_required": gtin_required,
+            "gtin_conditional": gtin_conditional,
+            "gtin_offer_required": any(item["required"] for item in gtin),
             "can_create_without_gtin": leaf and product_creation and offer_creation and not gtin_required,
             "parameters": normalized,
         }
@@ -275,5 +285,7 @@ class AllegroCatalog:
             "unit": item.get("unit"),
             "dictionary": item.get("dictionary") if isinstance(item.get("dictionary"), list) else [],
             "restrictions": item.get("restrictions") if isinstance(item.get("restrictions"), dict) else {},
+            "required_if": item.get("requiredIf") if isinstance(item.get("requiredIf"), dict) else None,
+            "displayed_if": item.get("displayedIf") if isinstance(item.get("displayedIf"), dict) else None,
             "options": options,
         }

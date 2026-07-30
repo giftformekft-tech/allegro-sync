@@ -101,22 +101,37 @@ async function inspectCategory(categoryId,template=undefined){
 }
 function renderCategory(category,template=null){
   $('#selectedCategoryName').textContent=category.name;$('#selectedCategoryPath').textContent=category.path.map(p=>p.name).join(' / ');
-  const verdict=$('#categoryVerdict');verdict.textContent=category.can_create_without_gtin?'EAN nélkül használható':category.gtin_required?'GTIN kötelező':'Korlátozott';verdict.className=`badge ${category.can_create_without_gtin?'good':category.gtin_required?'bad':'neutral'}`;
-  const facts=[['Levélkategória',category.leaf],['Saját termék',category.product_creation_enabled],['Termékajánlat',category.offer_creation_enabled],['GTIN nem kötelező',!category.gtin_required]];
-  $('#verdictGrid').innerHTML=facts.map(([label,ok])=>`<div class="verdict-item ${ok?'ok':'bad'}"><span>${icon(ok?'i-check':'i-alert')}</span><div><strong>${escapeHtml(label)}</strong><small>${ok?'Rendben':'Nem teljesül'}</small></div></div>`).join('');
-  const required=category.parameters.filter(p=>p.required||p.required_for_product);$('#parameterFields').innerHTML=required.length?required.map(parameterField).join(''):'<div class="wizard-empty">Ebben a kategóriában nincs további kötelező paraméter.</div>';
+  renderCategoryFacts(category,category.gtin_required);
+  const required=category.parameters.filter(p=>p.is_gtin?p.required_for_product:(p.required||p.required_for_product));$('#parameterFields').innerHTML=required.length?required.map(parameterField).join(''):'<div class="wizard-empty">Ebben a kategóriában nincs további kötelező paraméter.</div>';
   applyTemplateRules(template);
+  refreshConditionalParameters();
+}
+function renderCategoryFacts(category,gtinRequired){
+  const usable=category.leaf&&category.product_creation_enabled&&category.offer_creation_enabled&&!gtinRequired;const verdict=$('#categoryVerdict');verdict.textContent=usable?'GTIN nélkül folytatható':gtinRequired?'GTIN kötelező':'Korlátozott';verdict.className=`badge ${usable?'good':gtinRequired?'bad':'neutral'}`;
+  const facts=[['Levélkategória',category.leaf],['Saját termék',category.product_creation_enabled],['Termékajánlat',category.offer_creation_enabled],['GTIN nem kötelező',!gtinRequired]];$('#verdictGrid').innerHTML=facts.map(([label,ok])=>`<div class="verdict-item ${ok?'ok':'bad'}"><span>${icon(ok?'i-check':'i-alert')}</span><div><strong>${escapeHtml(label)}</strong><small>${ok?'Rendben':'Nem teljesül'}</small></div></div>`).join('');
+}
+function conditionMatches(condition){
+  if(!condition)return true;const values={};$$('[data-parameter]',$('#parameterFields')).forEach(field=>values[field.dataset.parameter]=field.value);
+  const withValues=Array.isArray(condition.parametersWithValue)?condition.parametersWithValue:[];const withoutValues=Array.isArray(condition.parametersWithoutValue)?condition.parametersWithoutValue:[];
+  return withValues.every(rule=>(rule.oneOfValueIds||[]).map(String).includes(String(values[String(rule.id)]||'')))&&withoutValues.every(rule=>!String(values[String(rule.id)]||'').trim());
+}
+function effectiveRequired(parameter){return Boolean((parameter.required||parameter.required_for_product)&&conditionMatches(parameter.required_if))}
+function refreshConditionalParameters(){
+  if(!selectedCategory)return;selectedCategory.parameters.forEach(parameter=>{const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===String(parameter.id));if(!field)return;const required=effectiveRequired(parameter);const card=field.closest('.parameter-field');card.classList.toggle('gtin-field',Boolean(parameter.is_gtin&&required));card.classList.toggle('optional-field',!required);const mark=card.querySelector('.required-mark');if(mark)mark.classList.toggle('hidden',!required);const state=card.querySelector('.requirement-state');if(state)state.textContent=required?'Kötelező':parameter.is_gtin?'Nincs GTIN – opcionális':'Feltételesen opcionális'});
+  const gtinRequired=selectedCategory.parameters.filter(parameter=>parameter.is_gtin).some(effectiveRequired);renderCategoryFacts(selectedCategory,gtinRequired);
 }
 function parameterField(parameter){
   const meta=`${parameter.required_for_product?'Termékadat':'Ajánlatadat'}${parameter.unit?` · ${parameter.unit}`:''}`;const dynamic=Boolean(parameter.suggested_source);let control;
   if(parameter.type==='dictionary')control=`<select data-parameter="${escapeHtml(parameter.id)}" data-suggested="${escapeHtml(parameter.suggested_value||'')}"><option value="">Válassz…</option>${parameter.dictionary.map(v=>`<option value="${escapeHtml(v.id)}" ${String(v.id)===String(parameter.suggested_value)?'selected':''}>${escapeHtml(v.value)}</option>`).join('')}</select>`;
   else control=`<input data-parameter="${escapeHtml(parameter.id)}" data-suggested="${escapeHtml(parameter.suggested_value||'')}" value="${escapeHtml(parameter.suggested_value||'')}" placeholder="Add meg az értéket">`;
-  return `<label class="parameter-field ${parameter.is_gtin?'gtin-field':''} ${dynamic?'dynamic':''}"><span>${escapeHtml(parameter.name)} <b>*</b></span>${control}<small>${escapeHtml(meta)} · ID ${escapeHtml(parameter.id)}</small><span class="parameter-source"><input type="checkbox" data-dynamic-param="${escapeHtml(parameter.id)}" ${dynamic?'checked':''}> Termékből frissül</span></label>`;
+  const source=dynamic?`<span class="parameter-source"><input type="checkbox" data-dynamic-param="${escapeHtml(parameter.id)}" checked> Termékből frissül</span>`:'<span class="parameter-source manual-source">Kézzel vagy sablonból megadható</span>';
+  return `<label class="parameter-field ${dynamic?'dynamic':''}"><span>${escapeHtml(parameter.name)} <b class="required-mark">*</b></span>${control}<small>${escapeHtml(meta)} · ID ${escapeHtml(parameter.id)} · <em class="requirement-state">Kötelező</em></small>${source}</label>`;
 }
 function applyTemplateRules(template){
   const rules=new Map((template?.rules||[]).map(rule=>[String(rule.parameter_id),rule]));
-  $$('[data-parameter]',$('#parameterFields')).forEach(field=>{const rule=rules.get(field.dataset.parameter);if(!rule)return;const dynamic=$(`[data-dynamic-param="${field.dataset.parameter}"]`,$('#parameterFields'));dynamic.checked=rule.mode==='product';if(rule.mode==='fixed')field.value=rule.value;else field.value=field.dataset.suggested||'';field.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)});
+  $$('[data-parameter]',$('#parameterFields')).forEach(field=>{const rule=rules.get(field.dataset.parameter);if(!rule)return;const dynamic=$(`[data-dynamic-param="${field.dataset.parameter}"]`,$('#parameterFields'));if(dynamic)dynamic.checked=rule.mode==='product';if(rule.mode==='fixed'||!dynamic)field.value=rule.value;else field.value=field.dataset.suggested||'';field.closest('.parameter-field').classList.toggle('dynamic',Boolean(dynamic?.checked))});
   const stockRule=rules.get('__stock__');if(stockRule){$('#stockFromProduct').checked=stockRule.mode==='product';if(stockRule.mode==='fixed')$('#offerStock').value=stockRule.value;else syncOfferPrice()}
+  refreshConditionalParameters();
 }
 function offerRequest(){const parameters={};$$('[data-parameter]',$('#parameterFields')).forEach(field=>{if(field.value)parameters[field.dataset.parameter]=field.value});return{product_id:Number($('#offerProduct').value||0),category_id:selectedCategory?.id||'',price_amount:$('#offerPrice').value.trim(),stock_available:$('#offerStock').value.trim(),parameters}}
 async function previewOffer(){
@@ -181,7 +196,7 @@ async function startLogin(){
 async function pollLogin(code){try{const data=await api('/api/auth/device/poll',{method:'POST',body:JSON.stringify({device_code:code})});if(data.status==='authorized'){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent='Sikeresen csatlakoztatva.';toast('Az eladói fiók csatlakoztatva.','success');loadConnectionState();loadDashboard()}}catch(error){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent=error.message;toast(error.message,'error')}}
 
 document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}});
-document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}});
+document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters()});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 $('#refreshDashboard').addEventListener('click',loadDashboard);

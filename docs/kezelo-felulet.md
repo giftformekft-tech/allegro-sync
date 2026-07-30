@@ -101,6 +101,11 @@ ezeket az alkalmazás mindig az aktuálisan kiválasztott termékből veszi.
 A létrehozott ajánlat publikációs állapota minden esetben `INACTIVE`; ez a
 folyamat nem aktivál és nem kezd automatikus értékesítésbe.
 
+Az EAN/GTIN mező feltételes lehet. A program az API `requiredIf` szabályát
+folyamatosan újraszámolja a kiválasztott állapot és márka alapján. Az `új`
+állapot önmagában nem teszi kötelezővé az EAN-t: ha például a márka
+`márkanév nélkül`, a mező opcionális marad és kimarad a feltöltésből.
+
 ## Ami még nincs bekötve
 
 - külön képfeltöltési gyorsítótár és önálló `product-proposals` folyamat;

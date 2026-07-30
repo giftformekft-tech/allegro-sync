@@ -308,6 +308,11 @@
   accent-color: var(--orange);
 }
 
+.manual-source {
+  color: #777b84;
+  cursor: default;
+}
+
 .parameter-field.dynamic {
   border-color: #d4e8df;
   background: #f7fbf9;
@@ -316,6 +321,21 @@
 .parameter-field.gtin-field {
   border-color: #efb6b2;
   background: var(--red-soft);
+}
+
+.parameter-field.optional-field {
+  border-color: #cce9dc;
+  background: #f7fbf9;
+}
+
+.requirement-state {
+  color: var(--green);
+  font-style: normal;
+  font-weight: 750;
+}
+
+.gtin-field .requirement-state {
+  color: var(--red);
 }
 
 .environment-chip {

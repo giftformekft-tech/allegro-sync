@@ -56,6 +56,32 @@ def serialize_parameter(parameter: dict, value: Any) -> dict | None:
     return {"id": parameter_id, "values": [str(value).strip()]}
 
 
+def parameter_is_required(parameter: dict, selections: dict[str, Any]) -> bool:
+    required = bool(parameter.get("required") or parameter.get("required_for_product"))
+    condition = parameter.get("required_if")
+    if not required or not isinstance(condition, dict):
+        return required
+    with_values = condition.get("parametersWithValue")
+    if not isinstance(with_values, list):
+        with_values = []
+    without_values = condition.get("parametersWithoutValue")
+    if not isinstance(without_values, list):
+        without_values = []
+    for dependency in with_values:
+        if not isinstance(dependency, dict):
+            return False
+        selected = str(selections.get(str(dependency.get("id", "")), ""))
+        allowed = {str(value) for value in dependency.get("oneOfValueIds", [])}
+        if selected not in allowed:
+            return False
+    for dependency in without_values:
+        if not isinstance(dependency, dict):
+            return False
+        if str(selections.get(str(dependency.get("id", "")), "")).strip():
+            return False
+    return True
+
+
 def _description(value: str) -> dict:
     content = value.strip()
     if not content:
@@ -83,8 +109,11 @@ def build_offer_payload(
         raise ValueError("Ebben a kategóriában nem engedélyezett a katalógustermékes ajánlat.")
     if not category.get("product_creation_enabled"):
         raise ValueError("Ebben a kategóriában nem engedélyezett saját katalógustermék létrehozása.")
-    if category.get("gtin_required") and not selections.get("__gtin__"):
-        raise ValueError("Ebben a kategóriában kötelező a GTIN/EAN, de a projekt nem használ EAN-t.")
+    gtin_parameters = [parameter for parameter in category.get("parameters", []) if parameter.get("is_gtin")]
+    provided_gtin = any(str(selections.get(str(parameter.get("id")), "")).strip() for parameter in gtin_parameters)
+    gtin_required = any(parameter_is_required(parameter, selections) for parameter in gtin_parameters)
+    if gtin_required and not provided_gtin:
+        raise ValueError("Ebben a kategóriában új termékhez kötelező a GTIN/EAN.")
 
     product_parameters: list[dict] = []
     offer_parameters: list[dict] = []
@@ -92,7 +121,7 @@ def build_offer_payload(
     for parameter in category.get("parameters", []):
         value = selections.get(str(parameter["id"]))
         serialized = serialize_parameter(parameter, value)
-        required = bool(parameter.get("required") or parameter.get("required_for_product"))
+        required = parameter_is_required(parameter, selections)
         if required and serialized is None and not parameter.get("is_gtin"):
             missing.append(str(parameter.get("name") or parameter["id"]))
             continue

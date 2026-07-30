@@ -82,7 +82,9 @@ forme.hu CSV ─► képfeltöltés ─► katalógustermék ─► ajánlat (in
 ajánlat katalógushoz kötését, és a GTIN-t alapparaméterként kezeli. EAN nélkül
 saját katalógusterméket kell javasolni (`POST /sale/product-proposals`), ami
 csak olyan kategóriában megy, ahol a `productCreationEnabled` igaz és a GTIN
-nem kötelező. **Ezt kell először kideríteni** – ez a terv 0. fázisa.
+nem kötelező. A GTIN kötelezettsége feltételes is lehet: a pólókategóriákban
+például az állapot és a márka együtt dönthet róla. A program az Allegro
+`requiredIf` szabályait is kiértékeli.
 
 **2. Darabszám-robbanás.** A többvariánsos ajánlat-erőforrásokat az Allegro
 2026 áprilisában kivezette, a variánsokat a katalógusból képzi. Minden

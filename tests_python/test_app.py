@@ -14,6 +14,7 @@ from allegro_app.importer import build_title, parse_csv
 from allegro_app.offers import (
     OfferService,
     build_offer_payload,
+    parameter_is_required,
     serialize_parameter,
     suggested_parameter_source,
     suggested_parameter_value,
@@ -150,14 +151,68 @@ class OfferPayloadTests(unittest.TestCase):
             build_offer_payload(self.product, self.category, {"brand": "brand_forme"})
 
     def test_gtin_category_is_rejected_without_gtin(self) -> None:
-        self.category["gtin_required"] = True
+        self.category["parameters"].append({
+            "id": "225693",
+            "name": "EAN (GTIN)",
+            "type": "string",
+            "required": True,
+            "required_for_product": True,
+            "describes_product": True,
+            "is_gtin": True,
+        })
         with self.assertRaisesRegex(ValueError, "GTIN"):
             build_offer_payload(self.product, self.category, {"brand": "brand_forme", "condition": "new"})
+
+    def test_conditional_gtin_is_optional_for_unlisted_brand(self) -> None:
+        gtin = {
+            "id": "225693",
+            "name": "EAN (GTIN)",
+            "type": "string",
+            "required": True,
+            "required_for_product": True,
+            "describes_product": True,
+            "is_gtin": True,
+            "required_if": {
+                "parametersWithValue": [
+                    {"id": "condition", "oneOfValueIds": ["new"]},
+                    {"id": "brand", "oneOfValueIds": ["protected_brand"]},
+                ],
+                "parametersWithoutValue": [],
+            },
+        }
+        self.category["parameters"].append(gtin)
+        selections = {"brand": "brand_forme", "condition": "new"}
+        self.assertFalse(parameter_is_required(gtin, selections))
+        payload = build_offer_payload(self.product, self.category, selections)
+        self.assertNotIn("225693", {item["id"] for item in payload["productSet"][0]["product"]["parameters"]})
+
+    def test_conditional_gtin_is_required_for_listed_brand(self) -> None:
+        gtin = {
+            "id": "225693",
+            "name": "EAN (GTIN)",
+            "type": "string",
+            "required": True,
+            "required_for_product": True,
+            "describes_product": True,
+            "is_gtin": True,
+            "required_if": {
+                "parametersWithValue": [
+                    {"id": "condition", "oneOfValueIds": ["new"]},
+                    {"id": "brand", "oneOfValueIds": ["protected_brand"]},
+                ]
+            },
+        }
+        self.category["parameters"].append(gtin)
+        selections = {"brand": "protected_brand", "condition": "new"}
+        self.assertTrue(parameter_is_required(gtin, selections))
+        with self.assertRaisesRegex(ValueError, "GTIN"):
+            build_offer_payload(self.product, self.category, selections)
 
     def test_dictionary_suggestion_matches_imported_value(self) -> None:
         parameter = self.category["parameters"][0]
         self.assertEqual("brand_forme", suggested_parameter_value(parameter, self.product))
         self.assertEqual("brand", suggested_parameter_source(parameter))
+        self.assertIsNone(suggested_parameter_source({"name": "EAN (GTIN)"}))
 
     def test_parameter_serialization(self) -> None:
         self.assertEqual(
