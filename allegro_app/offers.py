@@ -15,20 +15,24 @@ def _fold(value: str) -> str:
     return "".join(char for char in value if not unicodedata.combining(char)).casefold().strip()
 
 
-def suggested_parameter_value(parameter: dict, product: dict) -> str:
+def suggested_parameter_source(parameter: dict) -> str | None:
     name = _fold(str(parameter.get("name", "")))
-    candidates: list[str] = []
     if any(word in name for word in ("marka", "brand")):
-        candidates.append(str(product.get("brand", "")))
+        return "brand"
     if any(word in name for word in ("kolor", "szin", "color")):
-        candidates.append(str(product.get("color", "")))
+        return "color"
     if any(word in name for word in ("rozmiar", "meret", "size")):
-        candidates.append(str(product.get("size", "")))
+        return "size"
     if any(word in name for word in ("material", "anyag")):
-        candidates.append(str(product.get("material", "")))
+        return "material"
     if any(word in name for word in ("kod producenta", "gyartoi cikkszam", "manufacturer code")):
-        candidates.append(str(product.get("sku", "")))
-    candidate = next((value for value in candidates if value), "")
+        return "sku"
+    return None
+
+
+def suggested_parameter_value(parameter: dict, product: dict) -> str:
+    source = suggested_parameter_source(parameter)
+    candidate = str(product.get(source, "")) if source else ""
     dictionary = parameter.get("dictionary") or []
     if dictionary and candidate:
         folded = _fold(candidate)
@@ -69,6 +73,7 @@ def build_offer_payload(
     currency: str = "HUF",
     language: str = "hu-HU",
     price_amount: str | None = None,
+    stock_available: str | int | None = None,
 ) -> dict:
     if not product.get("image_url"):
         raise ValueError("A termékhez nincs kép URL, ezért nem tölthető fel.")
@@ -111,6 +116,13 @@ def build_offer_payload(
     if decimal_price <= 0:
         raise ValueError("Az árnak nullánál nagyobbnak kell lennie.")
     price = format(decimal_price, "f")
+    stock_raw = str(product["stock"] if stock_available in {None, ""} else stock_available).strip()
+    try:
+        stock = int(stock_raw)
+    except ValueError as exc:
+        raise ValueError("A készlet csak egész darabszám lehet.") from exc
+    if stock < 0:
+        raise ValueError("A készlet nem lehet negatív.")
     payload: dict[str, Any] = {
         "productSet": [{
             "product": {
@@ -127,7 +139,7 @@ def build_offer_payload(
             "format": "BUY_NOW",
             "price": {"amount": price, "currency": currency},
         },
-        "stock": {"available": int(product["stock"]), "unit": "UNIT"},
+        "stock": {"available": stock, "unit": "UNIT"},
         "publication": {"status": "INACTIVE"},
         "language": language,
         "images": [image],
@@ -174,6 +186,7 @@ class OfferService:
         category: dict,
         selections: dict[str, Any],
         price_amount: str | None = None,
+        stock_available: str | int | None = None,
     ) -> dict:
         product = self.database.get_product(product_id)
         marketplace = self.marketplace()
@@ -188,6 +201,7 @@ class OfferService:
             currency=marketplace["currency"],
             language=marketplace["language"],
             price_amount=price_amount,
+            stock_available=stock_available,
         )
         return {"payload": payload, "marketplace": marketplace}
 
@@ -198,10 +212,11 @@ class OfferService:
         selections: dict[str, Any],
         confirmation: str,
         price_amount: str | None = None,
+        stock_available: str | int | None = None,
     ) -> dict:
         if confirmation.strip().upper() != "FELTÖLTÉS":
             raise ValueError("A létrehozáshoz írd be pontosan: FELTÖLTÉS")
-        preview = self.preview(product_id, category, selections, price_amount)
+        preview = self.preview(product_id, category, selections, price_amount, stock_available)
         response = self.client.request("POST", "/sale/product-offers", body=preview["payload"])
         body = response["body"] if isinstance(response["body"], dict) else {}
         offer_id = str(body.get("id", "")) or None

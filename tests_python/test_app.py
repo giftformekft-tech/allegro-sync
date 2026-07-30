@@ -11,7 +11,13 @@ from urllib.request import Request, urlopen
 from allegro_app.config import AppConfig
 from allegro_app.database import Database
 from allegro_app.importer import build_title, parse_csv
-from allegro_app.offers import OfferService, build_offer_payload, serialize_parameter, suggested_parameter_value
+from allegro_app.offers import (
+    OfferService,
+    build_offer_payload,
+    serialize_parameter,
+    suggested_parameter_source,
+    suggested_parameter_value,
+)
 from allegro_app.server import Application, AppServer
 
 
@@ -60,6 +66,28 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(1, db.commit_import(import_id))
             self.assertEqual(1, db.commit_import(import_id))
             self.assertEqual(1, len(db.list_products()))
+
+    def test_offer_template_can_be_saved_updated_and_deleted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "state.sqlite")
+            saved = db.save_offer_template(
+                "Pamut póló",
+                "123",
+                "Férfi pólók",
+                [
+                    {"parameter_id": "condition", "mode": "fixed", "value": "new"},
+                    {"parameter_id": "color", "mode": "product", "value": "ignored"},
+                    {"parameter_id": "__stock__", "mode": "fixed", "value": "12"},
+                ],
+            )
+            self.assertEqual("", saved["rules"][1]["value"])
+            updated = db.save_offer_template(
+                "Pamut póló", "456", "Női pólók", []
+            )
+            self.assertEqual(saved["id"], updated["id"])
+            self.assertEqual("456", db.list_offer_templates()[0]["category_id"])
+            db.delete_offer_template(saved["id"])
+            self.assertEqual([], db.list_offer_templates())
 
 
 class OfferPayloadTests(unittest.TestCase):
@@ -129,6 +157,7 @@ class OfferPayloadTests(unittest.TestCase):
     def test_dictionary_suggestion_matches_imported_value(self) -> None:
         parameter = self.category["parameters"][0]
         self.assertEqual("brand_forme", suggested_parameter_value(parameter, self.product))
+        self.assertEqual("brand", suggested_parameter_source(parameter))
 
     def test_parameter_serialization(self) -> None:
         self.assertEqual(
@@ -155,6 +184,24 @@ class OfferPayloadTests(unittest.TestCase):
                 self.category,
                 {"brand": "brand_forme", "condition": "new"},
                 price_amount="nem-ár",
+            )
+
+    def test_template_can_override_stock(self) -> None:
+        payload = build_offer_payload(
+            self.product,
+            self.category,
+            {"brand": "brand_forme", "condition": "new"},
+            stock_available="7",
+        )
+        self.assertEqual(7, payload["stock"]["available"])
+
+    def test_negative_template_stock_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "nem lehet negatív"):
+            build_offer_payload(
+                self.product,
+                self.category,
+                {"brand": "brand_forme", "condition": "new"},
+                stock_available="-1",
             )
 
 
@@ -251,6 +298,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(1, committed["imported"])
         products = self.request("/api/products")
         self.assertEqual("TEST-POLO-S", products["products"][0]["sku"])
+
+    def test_template_api_flow(self) -> None:
+        created = self.request("/api/templates", {
+            "name": "Alap póló",
+            "category_id": "123",
+            "category_name": "Pólók",
+            "rules": [{"parameter_id": "__stock__", "mode": "fixed", "value": "10"}],
+        })
+        template_id = created["template"]["id"]
+        self.assertEqual("10", self.request("/api/templates")["templates"][0]["rules"][0]["value"])
+        request = Request(self.base + f"/api/templates/{template_id}", method="DELETE")
+        with urlopen(request, timeout=3) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertEqual([], self.request("/api/templates")["templates"])
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4.3 2.7 17.2A1.8 1.8 0 0 0 4.2 20h15.6a1.8 1.8 0 0 0 1.5-2.8L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></symbol>
   </svg>
 
   <div class="app-shell">
@@ -76,6 +78,7 @@
         <div class="upload-wizard">
           <article class="card panel wizard-card">
             <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">KATEGÓRIA</span><h2>Pólókategória felderítése</h2><p class="muted">Az Allegro élő adataiból ellenőrizzük a GTIN-t és a kötelező paramétereket.</p></div></div>
+            <div class="template-toolbar"><div><span class="template-icon"><svg><use href="#i-copy"/></svg></span><div><strong>Mentett sablonok</strong><small>A fix adatok betöltődnek, a termékhez kötött mezők frissülnek.</small></div></div><select id="offerTemplate"><option value="">Válassz sablont…</option></select><button class="secondary" id="applyTemplate">Alkalmazás</button><button class="icon-button template-delete" id="deleteTemplate" title="Sablon törlése"><svg><use href="#i-trash"/></svg></button></div>
             <div class="inline-form"><label class="search"><svg><use href="#i-search"/></svg><input id="categoryPhrase" value="pamut póló" placeholder="pl. pamut póló"></label><button class="primary" id="searchCategories">Kategóriák keresése</button></div>
             <div class="category-results" id="categoryResults"><div class="wizard-empty">Keress rá a termékre az Allegro kategóriái között.</div></div>
           </article>
@@ -89,7 +92,8 @@
 
           <article class="card panel wizard-card hidden" id="offerPreviewCard">
             <div class="wizard-heading"><span class="step-number">3</span><div><span class="kicker">TESZTAJÁNLAT</span><h2>Payload ellenőrzése és feltöltés</h2><p class="muted">Az ajánlat mindig INACTIVE piszkozatként jön létre; külön aktiválás nem történik.</p></div><span class="environment-chip" id="uploadEnvironment">SANDBOX</span></div>
-            <div class="market-row"><div><span>Alappiac</span><strong id="marketplaceId">Betöltés…</strong></div><label><span>Tesztár (<b id="marketplaceCurrency">HUF</b>)</span><input id="offerPrice" inputmode="decimal" placeholder="A termék importált ára"></label><button class="secondary" id="previewOffer">JSON előnézet készítése</button></div>
+            <div class="market-row"><div><span>Alappiac</span><strong id="marketplaceId">Betöltés…</strong></div><label><span>Tesztár (<b id="marketplaceCurrency">HUF</b>)</span><input id="offerPrice" inputmode="decimal" placeholder="A termék importált ára"></label><div class="stock-control"><span>Készlet (db)</span><input id="offerStock" inputmode="numeric" min="0" type="number" placeholder="0"><label class="inline-check"><input id="stockFromProduct" type="checkbox" checked> Termékből frissül</label></div><button class="secondary" id="previewOffer">JSON előnézet készítése</button></div>
+            <div class="template-save"><div><strong>Sablon mentése</strong><small>A „Termékből frissül” mezőknél nem a pillanatnyi érték kerül a sablonba.</small></div><input id="templateName" maxlength="80" placeholder="pl. Férfi pamut póló"><button class="secondary" id="saveTemplate">Sablon mentése</button></div>
             <div class="payload-wrap hidden" id="payloadWrap"><div class="payload-head"><strong>POST /sale/product-offers</strong><span>application/vnd.allegro.public.v1+json</span></div><pre id="offerPayload"></pre></div>
             <div class="upload-confirm"><label><span>Megerősítés</span><input id="uploadConfirmation" placeholder="Írd be: FELTÖLTÉS" autocomplete="off"><small>Éles és sandbox környezetben is szükséges.</small></label><button class="primary danger-action" id="createOffer"><svg><use href="#i-upload"/></svg>Inaktív tesztajánlat létrehozása</button></div>
             <div class="offer-result hidden" id="offerResult"></div>

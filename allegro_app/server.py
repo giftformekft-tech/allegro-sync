@@ -15,7 +15,7 @@ from .allegro import AllegroApiError, AllegroAuth, AllegroCatalog, AllegroClient
 from .config import AppConfig
 from .database import Database
 from .importer import parse_csv
-from .offers import OfferService, suggested_parameter_value
+from .offers import OfferService, suggested_parameter_source, suggested_parameter_value
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,6 +101,8 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/products":
                 query = urllib.parse.parse_qs(parsed.query)
                 self._json({"products": self.app.database.list_products(query.get("q", [""])[0])})
+            elif parsed.path == "/api/templates":
+                self._json({"templates": self.app.database.list_offer_templates()})
             elif parsed.path == "/api/categories/suggest":
                 query = urllib.parse.parse_qs(parsed.query)
                 self._json({"categories": self.app.catalog.suggest(query.get("q", [""])[0])})
@@ -109,9 +111,10 @@ class Handler(BaseHTTPRequestHandler):
                 category = self.app.catalog.inspect(category_id)
                 query = urllib.parse.parse_qs(parsed.query)
                 product_id = int(query.get("product_id", ["0"])[0] or 0)
-                if product_id:
-                    product = self.app.database.get_product(product_id)
-                    for parameter in category["parameters"]:
+                product = self.app.database.get_product(product_id) if product_id else None
+                for parameter in category["parameters"]:
+                    parameter["suggested_source"] = suggested_parameter_source(parameter)
+                    if product:
                         parameter["suggested_value"] = suggested_parameter_value(parameter, product)
                 self._json({"category": category})
             elif parsed.path == "/api/settings":
@@ -151,6 +154,15 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/import/commit":
                 count = self.app.database.commit_import(int(body.get("import_id", 0)))
                 self._json({"ok": True, "imported": count})
+            elif self.path == "/api/templates":
+                rules = body.get("rules") if isinstance(body.get("rules"), list) else []
+                template = self.app.database.save_offer_template(
+                    str(body.get("name", "")),
+                    str(body.get("category_id", "")),
+                    str(body.get("category_name", "")),
+                    rules,
+                )
+                self._json({"ok": True, "template": template}, HTTPStatus.CREATED)
             elif self.path == "/api/auth/check":
                 self._json(self.app.auth.check_application())
             elif self.path == "/api/auth/device/start":
@@ -161,7 +173,8 @@ class Handler(BaseHTTPRequestHandler):
                 category = self.app.catalog.inspect(str(body.get("category_id", "")))
                 selections = body.get("parameters") if isinstance(body.get("parameters"), dict) else {}
                 preview = self.app.offers.preview(
-                    int(body.get("product_id", 0)), category, selections, str(body.get("price_amount", ""))
+                    int(body.get("product_id", 0)), category, selections,
+                    str(body.get("price_amount", "")), str(body.get("stock_available", ""))
                 )
                 self._json({**preview, "environment": self.app.config.environment})
             elif self.path == "/api/offers/create":
@@ -169,7 +182,8 @@ class Handler(BaseHTTPRequestHandler):
                 selections = body.get("parameters") if isinstance(body.get("parameters"), dict) else {}
                 result = self.app.offers.create(
                     int(body.get("product_id", 0)), category, selections,
-                    str(body.get("confirmation", "")), str(body.get("price_amount", ""))
+                    str(body.get("confirmation", "")), str(body.get("price_amount", "")),
+                    str(body.get("stock_available", ""))
                 )
                 self._json(result)
             else:
@@ -177,6 +191,20 @@ class Handler(BaseHTTPRequestHandler):
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
         except (ValueError, AllegroError) as exc:
+            self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_DELETE(self) -> None:
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            if not parsed.path.startswith("/api/templates/"):
+                self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
+                return
+            template_id = int(parsed.path.removeprefix("/api/templates/"))
+            self.app.database.delete_offer_template(template_id)
+            self._json({"ok": True})
+        except ValueError as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)

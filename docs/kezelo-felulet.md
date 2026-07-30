@@ -31,6 +31,10 @@ Windows alatt a gyökérben lévő `start-allegro-sync.bat` is használható.
   kötelező paraméterek dinamikus űrlapja, JSON-előnézet, majd egyetlen INACTIVE
   ajánlat létrehozása. A gomb nincs környezet alapján letiltva; minden esetben
   `FELTÖLTÉS` szöveges megerősítést kér, éles módban pedig külön párbeszédet is.
+- **Feltöltési sablonok:** a kategória és a fix Allegro-paraméterek névvel
+  menthetők, frissíthetők és törölhetők. Paraméterenként beállítható,
+  hogy fix sablonérték legyen vagy az aktuális termékből frissüljön.
+  A készlet ugyanezzel a két móddal használható.
 - **Kapcsolatok:** Allegro alkalmazás-token tesztelése és device-flow eladói
   bejelentkezés.
 - **Beállítások:** sandbox/éles környezet, Allegro-kulcsok, User-Agent és a
@@ -79,6 +83,20 @@ az Allegro 12-75 karakteres és legalább háromszavas címszabályát.
    pénznemet. HUF esetén az importált ár automatikusan megjelenik; más
    pénznemnél adj meg külön tesztárat.
 7. Készíts JSON-előnézetet. A feltöltéshez írd be pontosan: `FELTÖLTÉS`.
+
+## Sablonok használata
+
+1. Válassz kategóriát és terméket, majd töltsd ki a kötelező mezőket.
+2. Hagyd bejelölve a **Termékből frissül** opciót a szín, méret, márka,
+   anyag vagy gyártói cikkszám mellett, ha az importált termék adata legyen az alap.
+3. Vedd ki a jelölést azoknál a mezőknél, amelyek minden ilyen pólónál
+   azonosak, és válaszd ki vagy írd be a mentendő fix értéket.
+4. A készletnél is választhatsz termékből frissülő vagy fix darabszámot.
+5. Adj nevet a sablonnak, majd kattints a **Sablon mentése** gombra. Azonos
+   névvel mentve a meglévő sablon frissül.
+
+A termék neve, leírása, SKU-ja, képe és ára nincs a sablonba befagyasztva:
+ezeket az alkalmazás mindig az aktuálisan kiválasztott termékből veszi.
 
 A létrehozott ajánlat publikációs állapota minden esetben `INACTIVE`; ez a
 folyamat nem aktivál és nem kezd automatikus értékesítésbe.

@@ -89,6 +89,15 @@ class Database:
                     expires_at TEXT NOT NULL,
                     scope TEXT
                 );
+                CREATE TABLE IF NOT EXISTS offer_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    category_id TEXT NOT NULL,
+                    category_name TEXT NOT NULL,
+                    rules TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_columns(db, "products", {
@@ -228,6 +237,64 @@ class Database:
             )
         label = offer_id or "feldolgozás alatt"
         self.add_activity("upload", f"Inaktív Allegro tesztajánlat létrehozva: {label}")
+
+    def list_offer_templates(self) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM offer_templates ORDER BY name COLLATE NOCASE").fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["rules"] = json.loads(item["rules"])
+            result.append(item)
+        return result
+
+    def save_offer_template(
+        self, name: str, category_id: str, category_name: str, rules: list[dict[str, str]]
+    ) -> dict[str, Any]:
+        name = name.strip()
+        category_id = category_id.strip()
+        category_name = category_name.strip()
+        if len(name) < 2 or len(name) > 80:
+            raise ValueError("A sablon neve 2–80 karakter legyen.")
+        if not category_id or not category_name:
+            raise ValueError("A sablonhoz előbb válassz kategóriát.")
+        normalized: list[dict[str, str]] = []
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            parameter_id = str(rule.get("parameter_id", "")).strip()
+            mode = str(rule.get("mode", "fixed"))
+            if not parameter_id or mode not in {"fixed", "product"}:
+                continue
+            normalized.append({
+                "parameter_id": parameter_id,
+                "mode": mode,
+                "value": str(rule.get("value", "")) if mode == "fixed" else "",
+            })
+        timestamp = now_iso()
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO offer_templates(name, category_id, category_name, rules, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET name=excluded.name, category_id=excluded.category_id,
+                category_name=excluded.category_name, rules=excluded.rules, updated_at=excluded.updated_at""",
+                (name, category_id, category_name, json.dumps(normalized, ensure_ascii=False), timestamp, timestamp),
+            )
+            row = db.execute("SELECT * FROM offer_templates WHERE name = ? COLLATE NOCASE", (name,)).fetchone()
+        if row is None:
+            raise RuntimeError("A sablon mentése nem sikerült.")
+        result = dict(row)
+        result["rules"] = json.loads(result["rules"])
+        self.add_activity("template", f"Allegro feltöltési sablon mentve: {name}")
+        return result
+
+    def delete_offer_template(self, template_id: int) -> None:
+        with self.connect() as db:
+            row = db.execute("SELECT name FROM offer_templates WHERE id = ?", (template_id,)).fetchone()
+            if row is None:
+                raise ValueError("A sablon nem található.")
+            db.execute("DELETE FROM offer_templates WHERE id = ?", (template_id,))
+        self.add_activity("template", f"Allegro feltöltési sablon törölve: {row['name']}")
 
     def save_token(self, token_type: str, access: str, refresh: str | None, expires_at: str, scope: str | None) -> None:
         with self.connect() as db:

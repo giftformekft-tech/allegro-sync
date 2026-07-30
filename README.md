@@ -7,7 +7,8 @@ rendelésszinkron és szamlazz.hu számlázás.
 > **Státusz: működő első alkalmazásverzió.** A kattintásos Python-felület,
 > a CSV-előnézet és -validálás, a helyi SQLite állapottár, a terméklista,
 > az Allegro OAuth, az élő kategória/GTIN-felderítés és az egytermékes inaktív
-> tesztajánlat létrehozása elkészült. A tömeges feltöltés, rendelés- és
+> tesztajánlat létrehozása, valamint a menthető feltöltési sablonok elkészültek.
+> A tömeges feltöltés, rendelés- és
 > számlaszinkron következő ütem.
 
 ## Gyors indítás
@@ -31,6 +32,9 @@ indítás után:
    ki a kötelező Allegro-paramétereket, majd készíts egy inaktív ajánlatot.
    A program a csatlakoztatott eladói fiókból olvassa ki az alappiacot és
    annak pénznemét; nem HUF-os fióknál külön tesztárat kér.
+5. **Sablonok:** mentsd el a kategóriát, a fix paramétereket és igény
+   szerint a fix készletet. A termékhez kötött mezők minden kiválasztott
+   pólónál automatikusan frissülnek.
 
 Automata tesztek:
 
