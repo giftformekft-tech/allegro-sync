@@ -301,6 +301,30 @@ class OfferPayloadTests(unittest.TestCase):
         self.assertIn({"id": "201033", "values": ["72"]}, parameters)
         self.assertIn({"id": "201041", "values": ["53"]}, parameters)
 
+    def test_tshirt_pattern_and_front_print_defaults(self) -> None:
+        adult_pattern = {
+            "id": "3766",
+            "name": "Fő minta",
+            "type": "dictionary",
+            "dictionary": [{"id": "3766_218065", "value": "mintás (nyomatos)"}],
+        }
+        child_pattern = {
+            "id": "202497",
+            "name": "Fő minta",
+            "type": "dictionary",
+            "dictionary": [{"id": "202497_680829", "value": "nyomott mintás"}],
+        }
+        print_area = {
+            "id": "249926",
+            "name": "Nyomtatási terület",
+            "type": "dictionary",
+            "dictionary": [{"id": "249926_1783211", "value": "elülső"}],
+        }
+        self.assertEqual("allegro_default", suggested_parameter_source(adult_pattern))
+        self.assertEqual("3766_218065", suggested_parameter_value(adult_pattern, self.product))
+        self.assertEqual("202497_680829", suggested_parameter_value(child_pattern, self.product))
+        self.assertEqual("249926_1783211", suggested_parameter_value(print_area, self.product))
+
     def test_parameter_serialization(self) -> None:
         self.assertEqual(
             {"id": "brand", "valuesIds": ["brand_forme"]},

@@ -27,6 +27,13 @@ MEASUREMENT_PARAMETER_SOURCES = {
     "202513": "width_cm",   # Szélesség a hónaljnál (child)
 }
 
+# Category-specific dictionary defaults verified live on 2026-07-30.
+DEFAULT_PARAMETER_VALUES = {
+    "3766": "3766_218065",       # Adult Fő minta: mintás (nyomatos)
+    "202497": "202497_680829",   # Child Fő minta: nyomott mintás
+    "249926": "249926_1783211",  # Nyomtatási terület: elülső
+}
+
 
 def _fold(value: str) -> str:
     value = unicodedata.normalize("NFKD", value)
@@ -37,6 +44,8 @@ def suggested_parameter_source(parameter: dict) -> str | None:
     parameter_id = str(parameter.get("id", ""))
     if parameter_id in MEASUREMENT_PARAMETER_SOURCES:
         return MEASUREMENT_PARAMETER_SOURCES[parameter_id]
+    if parameter_id in DEFAULT_PARAMETER_VALUES:
+        return "allegro_default"
     name = _fold(str(parameter.get("name", "")))
     if any(word in name for word in ("marka", "brand")):
         return "brand"
@@ -52,6 +61,14 @@ def suggested_parameter_source(parameter: dict) -> str | None:
 
 
 def suggested_parameter_value(parameter: dict, product: dict) -> str:
+    default = DEFAULT_PARAMETER_VALUES.get(str(parameter.get("id", "")))
+    if default:
+        dictionary_ids = {
+            str(item.get("id", ""))
+            for item in (parameter.get("dictionary") or [])
+            if isinstance(item, dict)
+        }
+        return default if not dictionary_ids or default in dictionary_ids else ""
     source = suggested_parameter_source(parameter)
     candidate = str(product.get(source, "")) if source else ""
     dictionary = parameter.get("dictionary") or []

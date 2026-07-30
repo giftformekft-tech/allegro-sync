@@ -44,6 +44,10 @@ mellett automatikusan bekerül az Allegro megfelelő „További paraméterek”
 mezőibe is. A program a férfi/női és gyerek pólók eltérő paraméter-ID-jét
 kezeli.
 
+A pólók „Fő minta” paramétere alapból férfi/női terméknél „mintás
+(nyomatos)”, gyerekterméknél „nyomott mintás”. A „Nyomtatási terület”
+alapértéke „elülső”; mindegyik érték átírható és sablonba menthető.
+
 Automata tesztek:
 
 ```powershell
