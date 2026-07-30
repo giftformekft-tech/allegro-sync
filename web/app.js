@@ -77,8 +77,8 @@ async function loadSettings(){
   try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','invoice_driver','invoice_prefix'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
 }
 async function saveSettings(event){
-  event.preventDefault();const f=new FormData(event.currentTarget);const body=Object.fromEntries(f.entries());
-  try{await api('/api/settings',{method:'PUT',body:JSON.stringify(body)});event.currentTarget.elements.client_secret.value='';event.currentTarget.elements.szamlazz_agent_key.value='';toast('A beállításokat elmentettem.','success');await loadSettings();await loadDashboard()}catch(error){toast(error.message,'error')}
+  event.preventDefault();const form=event.currentTarget;const f=new FormData(form);const body=Object.fromEntries(f.entries());
+  try{await api('/api/settings',{method:'PUT',body:JSON.stringify(body)});form.elements.client_secret.value='';form.elements.szamlazz_agent_key.value='';toast('A beállításokat elmentettem.','success');await loadSettings();await loadDashboard()}catch(error){toast(error.message,'error')}
 }
 async function loadConnectionState(){
   try{const [d,s]=await Promise.all([api('/api/dashboard'),api('/api/settings')]);const c=d.connection;$('#connectionEnvironment').textContent=c.environment==='production'?'Éles':'Sandbox';$('#connectionApp').textContent=c.problems.length?'Beállítás szükséges':'Beállítva';$('#connectionUser').textContent=c.user_connected?'Csatlakoztatva':'Nincs csatlakoztatva';$('#allegroBadge').textContent=c.user_connected?'Csatlakoztatva':c.problems.length?'Nincs beállítva':'Beállítva';$('#allegroBadge').className=`badge ${c.user_connected?'good':c.problems.length?'bad':'neutral'}`;$('#startLogin').disabled=c.problems.length>0}catch(error){toast(error.message,'error')}
