@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111214">
-  <title>Allegro Sync</title>
+  <title>Marketplace Sync</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/platform.css">
   <link rel="stylesheet" href="/upload.css">
 </head>
 <body>
@@ -30,11 +31,11 @@
 
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><div class="brand-mark">a</div><div><strong>Allegro Sync</strong><span>forme.hu</span></div></div>
+      <div class="brand"><div class="brand-mark" id="brandMark">a</div><div><strong id="brandName">Allegro Sync</strong><span>forme.hu</span></div></div>
       <nav aria-label="Fő navigáció">
         <button class="nav-item active" data-view="dashboard"><svg><use href="#i-grid"/></svg><span>Áttekintés</span></button>
         <button class="nav-item" data-view="products"><svg><use href="#i-box"/></svg><span>Termékek</span><b id="navProductCount">0</b></button>
-        <button class="nav-item" data-view="upload"><svg><use href="#i-scan"/></svg><span>Tesztfeltöltés</span></button>
+        <button class="nav-item" data-view="upload"><svg><use href="#i-scan"/></svg><span id="uploadNavLabel">Tesztfeltöltés</span></button>
         <button class="nav-item" data-view="orders"><svg><use href="#i-cart"/></svg><span>Rendelések</span></button>
         <button class="nav-item" data-view="import"><svg><use href="#i-upload"/></svg><span>Importálás</span></button>
         <div class="nav-label">Rendszer</div>
@@ -51,12 +52,12 @@
       <header class="topbar">
         <button class="icon-button mobile-menu" id="mobileMenu"><svg><use href="#i-menu"/></svg></button>
         <div><p id="eyebrow">Műveleti központ</p><h1 id="pageTitle">Áttekintés</h1></div>
-        <div class="top-actions"><div class="status-pill" id="globalStatus"><i></i><span>Betöltés…</span></div><button class="avatar">FS</button></div>
+        <div class="top-actions"><label class="platform-switch"><span>Platform</span><select id="platformSelect" aria-label="Aktív platform"><option value="allegro">Allegro</option><option value="temu">Temu</option></select></label><div class="status-pill" id="globalStatus"><i></i><span>Betöltés…</span></div><button class="avatar">FS</button></div>
       </header>
 
       <section class="view active" id="view-dashboard">
         <div class="hero card">
-          <div><span class="kicker">MAI ÁLLAPOT</span><h2>Jó reggelt! Innen indul az Allegro működésed.</h2><p id="heroText">Ellenőrizzük a kapcsolatokat és az importált kínálatot.</p></div>
+          <div><span class="kicker">MAI ÁLLAPOT</span><h2 id="heroTitle">Jó reggelt! Innen indul az Allegro működésed.</h2><p id="heroText">Ellenőrizzük a kapcsolatokat és az importált kínálatot.</p></div>
           <button class="primary" data-go="import"><svg><use href="#i-upload"/></svg>Termékek importálása</button>
         </div>
         <div class="stats-grid">
@@ -77,7 +78,8 @@
       </section>
 
       <section class="view" id="view-upload">
-        <div class="upload-wizard">
+        <article class="card coming-soon temu-only"><div class="integration-logo temu-logo">t</div><span class="kicker">TEMU OPEN PLATFORM</span><h2>A Temu-termékfeltöltés következik</h2><p>Előbb mentsd el és teszteld a Temu API-kapcsolatot. Ezután ide kerül a pólóvariánsok kiválasztása, megfeleltetése és feltöltése.</p><button class="primary" data-go="integrations">Temu-kapcsolat beállítása</button></article>
+        <div class="upload-wizard allegro-only">
           <article class="card panel wizard-card">
             <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">KATEGÓRIA</span><h2>Pólókategória felderítése</h2><p class="muted">Az Allegro élő adataiból ellenőrizzük a GTIN-t és a kötelező paramétereket.</p></div></div>
             <div class="template-toolbar"><div><span class="template-icon"><svg><use href="#i-copy"/></svg></span><div><strong>Mentett sablonok</strong><small>A fix adatok betöltődnek, a termékhez kötött mezők frissülnek.</small></div></div><select id="offerTemplate"><option value="">Válassz sablont…</option></select><button class="secondary" id="applyTemplate">Alkalmazás</button><button class="icon-button template-delete" id="deleteTemplate" title="Sablon törlése"><svg><use href="#i-trash"/></svg></button></div>
@@ -117,8 +119,9 @@
       </section>
 
       <section class="view" id="view-orders">
-        <article class="card invoice-flow"><div><span class="kicker">ELSŐDLEGES KÉZBESÍTÉS</span><h2>Számla az Allegro-rendelésben</h2><p>A Számlázz.hu elkészíti a PDF-et, a program az Allegro rendeléshez tölti fel, és az Allegro értesíti a vevőt. A maszkolt vevői e-mailt a számlázónak is átadjuk; annak külön küldése csak biztonsági másodpéldány.</p></div><div class="flow-steps"><span>Számlázz.hu PDF</span><b>→</b><span>Allegro rendelés</span><b>→</b><span>Vevő értesítése</span></div></article>
-        <article class="card table-card order-card"><div class="table-head"><div><span class="kicker">ÉLŐ ALLEGRO ADATOK</span><h3>Legutóbbi rendelések</h3></div><button class="secondary" id="refreshOrders"><svg><use href="#i-arrow"/></svg>Frissítés</button></div><div class="table-wrap"><table><thead><tr><th>Rendelés</th><th>Vevő</th><th>Összeg</th><th>Állapot</th><th>Számla</th><th>Művelet</th></tr></thead><tbody id="orderRows"></tbody></table></div><div class="empty-table" id="orderEmpty"><div class="empty-icon"><svg><use href="#i-cart"/></svg></div><h3>Nincs megjeleníthető rendelés</h3><p>Frissítsd a listát egy csatlakoztatott eladói fiókkal.</p></div></article>
+        <article class="card coming-soon temu-only"><div class="integration-logo temu-logo">t</div><span class="kicker">TEMU RENDELÉSEK</span><h2>A rendelésmodul a termékfeltöltés után készül</h2><p>Az alapkapcsolat már ugyanebben az alkalmazásban kezelhető. A következő fázisban a Temu-rendeléseket és a számlázási folyamatot is külön kötjük be.</p></article>
+        <div class="allegro-only"><article class="card invoice-flow"><div><span class="kicker">ELSŐDLEGES KÉZBESÍTÉS</span><h2>Számla az Allegro-rendelésben</h2><p>A Számlázz.hu elkészíti a PDF-et, a program az Allegro rendeléshez tölti fel, és az Allegro értesíti a vevőt. A maszkolt vevői e-mailt a számlázónak is átadjuk; annak külön küldése csak biztonsági másodpéldány.</p></div><div class="flow-steps"><span>Számlázz.hu PDF</span><b>→</b><span>Allegro rendelés</span><b>→</b><span>Vevő értesítése</span></div></article>
+        <article class="card table-card order-card"><div class="table-head"><div><span class="kicker">ÉLŐ ALLEGRO ADATOK</span><h3>Legutóbbi rendelések</h3></div><button class="secondary" id="refreshOrders"><svg><use href="#i-arrow"/></svg>Frissítés</button></div><div class="table-wrap"><table><thead><tr><th>Rendelés</th><th>Vevő</th><th>Összeg</th><th>Állapot</th><th>Számla</th><th>Művelet</th></tr></thead><tbody id="orderRows"></tbody></table></div><div class="empty-table" id="orderEmpty"><div class="empty-icon"><svg><use href="#i-cart"/></svg></div><h3>Nincs megjeleníthető rendelés</h3><p>Frissítsd a listát egy csatlakoztatott eladói fiókkal.</p></div></article></div>
       </section>
 
       <section class="view" id="view-import">
@@ -132,6 +135,7 @@
       <section class="view" id="view-integrations">
         <div class="integrations-grid">
           <article class="card integration-card featured"><div class="integration-logo allegro-logo">a</div><div class="integration-body"><div class="integration-title"><div><h3>Allegro API</h3><p>Termékek, ajánlatok és rendelések</p></div><span class="badge" id="allegroBadge">Nincs beállítva</span></div><div class="connection-facts"><div><span>Környezet</span><strong id="connectionEnvironment">Sandbox</strong></div><div><span>Alkalmazás</span><strong id="connectionApp">Nincs ellenőrizve</strong></div><div><span>Eladói fiók</span><strong id="connectionUser">Nincs csatlakoztatva</strong></div></div><div class="button-row"><button class="secondary" id="checkConnection">Alkalmazás tesztelése</button><button class="primary" id="startLogin">Eladói fiók csatlakoztatása</button></div><div class="device-login hidden" id="deviceLogin"><span>Jóváhagyási kód</span><strong id="deviceCode">—</strong><a id="deviceLink" target="_blank" rel="noopener">Megnyitás az Allegrón <svg><use href="#i-arrow"/></svg></a><small id="deviceStatus">Várakozás a jóváhagyásra…</small></div></div></article>
+          <article class="card integration-card temu-card"><div class="integration-logo temu-logo">t</div><div class="integration-body"><div class="integration-title"><div><h3>Temu Open Platform</h3><p>Termékek, készlet és rendelések</p></div><span class="badge neutral" id="temuBadge">Nincs beállítva</span></div><div class="connection-facts"><div><span>Régió</span><strong>EU</strong></div><div><span>App Key</span><strong id="temuAppState">Nincs megadva</strong></div><div><span>Access Token</span><strong id="temuTokenState">Nincs megadva</strong></div></div><div class="button-row"><button class="secondary" id="checkTemuConnection">Temu-kapcsolat tesztelése</button><button class="primary" data-go="settings">Temu-beállítások</button></div></div></article>
           <article class="card integration-card"><div class="integration-logo invoice-logo">sz</div><div class="integration-body"><div class="integration-title"><div><h3>szamlazz.hu</h3><p>Automatikus HUF számlázás</p></div><span class="badge neutral" id="invoiceBadge">Nincs beállítva</span></div><p class="integration-copy">A számlázó elkészíti a PDF-et, az elsődleges kézbesítést az Allegro végzi. A közvetlen számlázói e-mail külön biztonsági másodpéldányként kapcsolható be.</p><button class="secondary" data-go="settings">Beállítások megnyitása</button></div></article>
         </div>
       </section>
@@ -139,6 +143,7 @@
       <section class="view" id="view-settings">
         <form class="settings-grid" id="settingsForm">
           <article class="card panel"><span class="kicker">ALLEGRO</span><h3>API-kapcsolat</h3><div class="field-row"><label><span>Környezet</span><select name="environment"><option value="sandbox">Sandbox (teszt)</option><option value="production">Production (éles)</option></select></label><label><span>Nyelv</span><select name="language"><option value="hu-HU">Magyar · hu-HU</option><option value="en-US">Angol · en-US</option><option value="pl-PL">Lengyel · pl-PL</option></select></label></div><label><span>Client ID</span><input name="client_id" autocomplete="off" placeholder="Allegro alkalmazásazonosító"></label><label><span>Client Secret</span><input name="client_secret" type="password" autocomplete="new-password" placeholder="Hagyd üresen a meglévő megtartásához"><small id="secretHint"></small></label><label><span>User-Agent</span><input name="user_agent" placeholder="formeAllegroSync/1.0.0 (+https://forme.hu/allegro-sync)"><small>Az alkalmazás neve és egy elérhető HTTPS információs oldal kötelező.</small></label></article>
+          <article class="card panel"><span class="kicker">TEMU · EU</span><h3>Open Platform API</h3><label><span>API-végpont</span><input name="temu_endpoint" type="url" placeholder="https://openapi-b-eu.temu.com/openapi/router"><small>Az EU-s eladói fiók Open Platform végpontja.</small></label><label><span>App Key</span><input name="temu_app_key" autocomplete="off" placeholder="Temu alkalmazásazonosító"></label><label><span>App Secret</span><input name="temu_app_secret" type="password" autocomplete="new-password" placeholder="Hagyd üresen a meglévő megtartásához"><small id="temuSecretHint"></small></label><label><span>Access Token</span><input name="temu_access_token" type="password" autocomplete="new-password" placeholder="Hagyd üresen a meglévő megtartásához"><small id="temuTokenHint"></small></label><div class="notice"><svg><use href="#i-alert"/></svg><p>A titkos kulcs és a token csak a helyi .env fájlba kerül. A felület később sem olvassa vissza az értéküket.</p></div></article>
           <article class="card panel"><span class="kicker">SZÁMLÁZÁS</span><h3>szamlazz.hu</h3><label><span>Számlázó modul</span><select name="invoice_driver"><option value="none">Kikapcsolva</option><option value="szamlazz">Számla Agent</option></select></label><label><span>Agent kulcs</span><input name="szamlazz_agent_key" type="password" autocomplete="new-password" placeholder="Hagyd üresen a meglévő megtartásához"><small id="agentHint"></small></label><label><span>Számla előtag</span><input name="invoice_prefix" placeholder="pl. ALLEGRO"></label><label><span>Biztonsági Számlázz.hu e-mail</span><select name="invoice_email_fallback"><option value="false">Kikapcsolva – csak az Allegro értesít</option><option value="true">Bekapcsolva – másodpéldány e-mailben is</option></select><small>A vevő Allegro által maszkolt e-mail-címére küldi. Bekapcsolva a vevő két értesítést is kaphat.</small></label><div class="notice"><svg><use href="#i-alert"/></svg><p>Az elsődleges út mindig a PDF feltöltése az Allegro rendeléshez. HUF és 27% ÁFA az alapértelmezett; eltérő vagy nem egyező rendelési összegnél a program nem készít számlát.</p></div></article>
           <div class="settings-save"><p><strong>A kulcsokat a helyi .env fájl tárolja.</strong><span>Ez a fájl ki van zárva a Gitből.</span></p><button class="primary" type="submit">Beállítások mentése</button></div>
         </form>

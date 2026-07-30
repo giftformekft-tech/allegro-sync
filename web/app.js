@@ -1,6 +1,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const titles = {dashboard:['Műveleti központ','Áttekintés'],products:['Kínálat','Termékek'],upload:['Allegro','Tesztfeltöltés'],orders:['Értékesítés','Rendelések'],import:['Kínálat','Importálás'],integrations:['Rendszer','Kapcsolatok'],settings:['Rendszer','Beállítások']};
+let activePlatform = localStorage.getItem('marketplace-platform') === 'temu' ? 'temu' : 'allegro';
 let currentImportId = null;
 let deviceTimer = null;
 let selectedCategory = null;
@@ -22,35 +23,47 @@ function toast(message,type=''){const el=document.createElement('div');el.classN
 function formatNumber(value){return new Intl.NumberFormat('hu-HU').format(value||0)}
 function formatDate(value){if(!value)return '—';return new Intl.DateTimeFormat('hu-HU',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}
 
+function setPlatform(platform, refresh=true){
+  activePlatform=platform==='temu'?'temu':'allegro';localStorage.setItem('marketplace-platform',activePlatform);document.body.dataset.platform=activePlatform;
+  $('#platformSelect').value=activePlatform;$('#brandMark').textContent=activePlatform==='temu'?'t':'a';$('#brandName').textContent=activePlatform==='temu'?'Temu Sync':'Allegro Sync';$('#uploadNavLabel').textContent=activePlatform==='temu'?'Temu feltöltés':'Tesztfeltöltés';
+  if(refresh)navigate(location.hash.slice(1)||'dashboard');
+}
+
 function navigate(view){
   if(!titles[view]) view='dashboard';
   $$('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${view}`));
   $$('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
-  $('#eyebrow').textContent=titles[view][0]; $('#pageTitle').textContent=titles[view][1];
+  const title=activePlatform==='temu'&&view==='upload'?['Temu','Termékfeltöltés']:titles[view];
+  $('#eyebrow').textContent=title[0]; $('#pageTitle').textContent=title[1];
   history.replaceState(null,'',`#${view}`); $('#sidebar').classList.remove('open');
   if(view==='dashboard') loadDashboard(); if(view==='products') loadProducts();
   if(view==='upload') loadUpload();
-  if(view==='orders') loadOrders();
+  if(view==='orders'&&activePlatform==='allegro') loadOrders();
   if(view==='settings') loadSettings(); if(view==='integrations') loadConnectionState();
 }
 
 async function loadDashboard(){
   try{
-    const data=await api('/api/dashboard'); const s=data.stats;
+    const [data,settings]=await Promise.all([api('/api/dashboard'),api('/api/settings')]); const s=data.stats;const temu=activePlatform==='temu';
     $('#statProducts').textContent=formatNumber(s.products); $('#statReady').textContent=formatNumber(s.ready);
     $('#statDrafts').textContent=`${formatNumber(s.drafts)} piszkozat`; $('#statOrders').textContent=formatNumber(s.orders);
     $('#statStock').textContent=formatNumber(s.stock); $('#navProductCount').textContent=s.products;
-    $('#environmentLabel').textContent=data.connection.environment==='production'?'Éles mód':'Sandbox mód';
-    const ready=[!data.connection.problems.length,s.products>0,data.connection.user_connected];
-    const items=[
+    $('#environmentLabel').textContent=temu?'Temu · EU':data.connection.environment==='production'?'Éles mód':'Sandbox mód';
+    const ready=temu?[settings.temu_ready,s.products>0,false]:[!data.connection.problems.length,s.products>0,data.connection.user_connected];
+    const items=temu?[
+      ['Temu API-kulcsok beállítása',settings.temu_ready?'Az App Key, App Secret és Access Token el van mentve.':'Add meg a Temu Open Platform alkalmazásadatait.','settings'],
+      ['Első termékimport',s.products?`${s.products} termékváltozat elmentve.`:'Töltsd be a forme.hu exportját.','import'],
+      ['Temu termékfeltöltés','A pólóvariánsok feltöltési modulja a következő fejlesztési lépés.','upload']
+    ]:[
       ['API-kulcsok beállítása',data.connection.problems.length?data.connection.problems[0]:'Az alkalmazásadatok ki vannak töltve.','settings'],
       ['Első termékimport',s.products?`${s.products} termékváltozat elmentve.`:'Töltsd be a forme.hu CSV-exportját.','import'],
       ['Eladói fiók csatlakoztatása',data.connection.user_connected?'A felhasználói token rendelkezésre áll.':'OAuth jóváhagyás szükséges.','integrations']
     ];
     $('#checklist').innerHTML=items.map((item,i)=>`<div class="check-item ${ready[i]?'done':''}"><div class="check-dot">${icon(ready[i]?'i-check':'i-arrow')}</div><div><strong>${escapeHtml(item[0])}</strong><span>${escapeHtml(item[1])}</span></div>${ready[i]?'':`<button class="text-button" data-go="${item[2]}">Megnyitás</button>`}</div>`).join('');
     const done=ready.filter(Boolean).length; $('#progressLabel').textContent=`${done}/3`; $('#progressBar').style.width=`${done/3*100}%`;
+    $('#heroTitle').textContent=temu?'Jó reggelt! Innen indul a Temu működésed.':'Jó reggelt! Innen indul az Allegro működésed.';
     $('#heroText').textContent=s.products?`${s.products} változat várja a következő műveletet.`:'Kezdésként állítsd be az API-kulcsokat, majd tölts be egy CSV-t.';
-    const status=$('#globalStatus'); status.classList.toggle('connected',!data.connection.problems.length); status.querySelector('span').textContent=data.connection.problems.length?'Beállítás szükséges':(data.connection.user_connected?'Allegro csatlakoztatva':'API beállítva');
+    const connected=temu?settings.temu_ready:!data.connection.problems.length;const status=$('#globalStatus'); status.classList.toggle('connected',connected); status.querySelector('span').textContent=temu?(settings.temu_ready?'Temu API beállítva':'Temu beállítás szükséges'):(data.connection.problems.length?'Beállítás szükséges':(data.connection.user_connected?'Allegro csatlakoztatva':'API beállítva'));
     $('#activityList').innerHTML=data.activity.length?data.activity.map(a=>`<div class="timeline-item"><div class="timeline-symbol">${icon(a.kind==='import'?'i-upload':a.kind==='connection'?'i-link':'i-settings')}</div><p>${escapeHtml(a.message)}</p><time>${formatDate(a.created_at)}</time></div>`).join(''):'<div class="timeline-empty">Az első műveletek itt jelennek majd meg.</div>';
   }catch(error){toast(error.message,'error')}
 }
@@ -66,6 +79,7 @@ async function loadProducts(){
 
 function categoryTrail(item){const names=[];let current=item;while(current){if(current.name)names.unshift(current.name);current=current.parent}return names.join(' / ')}
 async function loadUpload(){
+  if(activePlatform==='temu')return;
   try{
     const [products,settings,templates]=await Promise.all([api('/api/products'),api('/api/settings'),api('/api/templates')]);uploadProducts=products.products;uploadTemplates=templates.templates;
     const select=$('#offerProduct');const previous=select.value;select.innerHTML='<option value="">Válassz importált terméket…</option>'+uploadProducts.map(p=>`<option value="${p.id}">${escapeHtml(p.title)} · ${escapeHtml(p.sku)}</option>`).join('');if(previous)select.value=previous;
@@ -229,16 +243,17 @@ async function createInvoice(orderId,button){
 }
 
 async function loadSettings(){
-  try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','invoice_driver','invoice_prefix'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});f.elements.invoice_email_fallback.value=String(Boolean(s.invoice_email_fallback));$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
+  try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','temu_endpoint','temu_app_key','invoice_driver','invoice_prefix'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});f.elements.invoice_email_fallback.value=String(Boolean(s.invoice_email_fallback));$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#temuSecretHint').textContent=s.temu_app_secret_set?'Van elmentett App Secret.':'Még nincs elmentett App Secret.';$('#temuTokenHint').textContent=s.temu_access_token_set?'Van elmentett Access Token.':'Még nincs elmentett Access Token.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
 }
 async function saveSettings(event){
   event.preventDefault();const form=event.currentTarget;const f=new FormData(form);const body=Object.fromEntries(f.entries());
-  try{await api('/api/settings',{method:'PUT',body:JSON.stringify(body)});form.elements.client_secret.value='';form.elements.szamlazz_agent_key.value='';toast('A beállításokat elmentettem.','success');await loadSettings();await loadDashboard()}catch(error){toast(error.message,'error')}
+  try{await api('/api/settings',{method:'PUT',body:JSON.stringify(body)});form.elements.client_secret.value='';form.elements.temu_app_secret.value='';form.elements.temu_access_token.value='';form.elements.szamlazz_agent_key.value='';toast('A beállításokat elmentettem.','success');await loadSettings();await loadDashboard()}catch(error){toast(error.message,'error')}
 }
 async function loadConnectionState(){
-  try{const [d,s]=await Promise.all([api('/api/dashboard'),api('/api/settings')]);const c=d.connection;$('#connectionEnvironment').textContent=c.environment==='production'?'Éles':'Sandbox';$('#connectionApp').textContent=c.problems.length?'Beállítás szükséges':'Beállítva';$('#connectionUser').textContent=c.user_connected?'Csatlakoztatva':'Nincs csatlakoztatva';$('#allegroBadge').textContent=c.user_connected?'Csatlakoztatva':c.problems.length?'Nincs beállítva':'Beállítva';$('#allegroBadge').className=`badge ${c.user_connected?'good':c.problems.length?'bad':'neutral'}`;$('#invoiceBadge').textContent=s.invoice_ready?'Működésre kész':s.invoice_driver==='szamlazz'?'Agent kulcs hiányzik':'Kikapcsolva';$('#invoiceBadge').className=`badge ${s.invoice_ready?'good':s.invoice_driver==='szamlazz'?'bad':'neutral'}`;const login=$('#startLogin');login.disabled=false;login.title=c.problems.join(' ')}catch(error){toast(error.message,'error')}
+  try{const [d,s]=await Promise.all([api('/api/dashboard'),api('/api/settings')]);const c=d.connection;$('#connectionEnvironment').textContent=c.environment==='production'?'Éles':'Sandbox';$('#connectionApp').textContent=c.problems.length?'Beállítás szükséges':'Beállítva';$('#connectionUser').textContent=c.user_connected?'Csatlakoztatva':'Nincs csatlakoztatva';$('#allegroBadge').textContent=c.user_connected?'Csatlakoztatva':c.problems.length?'Nincs beállítva':'Beállítva';$('#allegroBadge').className=`badge ${c.user_connected?'good':c.problems.length?'bad':'neutral'}`;$('#temuAppState').textContent=s.temu_app_key?'Megadva':'Nincs megadva';$('#temuTokenState').textContent=s.temu_access_token_set?'Megadva':'Nincs megadva';$('#temuBadge').textContent=s.temu_ready?'Beállítva':'Nincs beállítva';$('#temuBadge').className=`badge ${s.temu_ready?'good':'neutral'}`;$('#invoiceBadge').textContent=s.invoice_ready?'Működésre kész':s.invoice_driver==='szamlazz'?'Agent kulcs hiányzik':'Kikapcsolva';$('#invoiceBadge').className=`badge ${s.invoice_ready?'good':s.invoice_driver==='szamlazz'?'bad':'neutral'}`;const login=$('#startLogin');login.disabled=false;login.title=c.problems.join(' ')}catch(error){toast(error.message,'error')}
 }
 async function checkConnection(){const b=$('#checkConnection');b.disabled=true;b.textContent='Ellenőrzés…';try{const data=await api('/api/auth/check',{method:'POST',body:'{}'});toast(`Sikeres Allegro-kapcsolat (${data.environment}).`,'success');$('#connectionApp').textContent='Ellenőrizve';$('#startLogin').disabled=false;await loadDashboard()}catch(error){toast(error.message,'error')}finally{b.disabled=false;b.textContent='Alkalmazás tesztelése'}}
+async function checkTemuConnection(){const b=$('#checkTemuConnection');b.disabled=true;b.textContent='Ellenőrzés…';try{await api('/api/temu/check',{method:'POST',body:'{}'});toast('Sikeres Temu Open Platform kapcsolat.','success');$('#temuBadge').textContent='Kapcsolódva';$('#temuBadge').className='badge good';await loadDashboard()}catch(error){toast(error.message,'error')}finally{b.disabled=false;b.textContent='Temu-kapcsolat tesztelése'}}
 async function startLogin(){
   if(deviceTimer)clearInterval(deviceTimer);try{const data=await api('/api/auth/device/start',{method:'POST',body:'{}'});$('#deviceLogin').classList.remove('hidden');$('#deviceCode').textContent=data.user_code;const link=$('#deviceLink');link.href=data.verification_uri_complete||data.verification_uri;$('#deviceStatus').textContent='Várakozás a jóváhagyásra…';deviceTimer=setInterval(()=>pollLogin(data.device_code),Math.max(4,data.interval)*1000)}catch(error){toast(error.message,'error')}
 }
@@ -248,13 +263,14 @@ document.addEventListener('click',event=>{const go=event.target.closest('[data-g
 document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters()});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+$('#platformSelect').addEventListener('change',event=>setPlatform(event.target.value));
 $('#refreshDashboard').addEventListener('click',loadDashboard);
 let searchTimer;$('#productSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadProducts,250)});
 $('#csvFile').addEventListener('change',event=>previewFile(event.target.files[0]));
 const dz=$('#dropzone');['dragenter','dragover'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',event=>previewFile(event.dataTransfer.files[0]));
 $('#useSample').addEventListener('click',async()=>{try{const response=await fetch('/sample.csv');if(!response.ok)throw new Error('A mintafájl nem érhető el.');const blob=await response.blob();previewFile(new File([blob],'export-minta.csv',{type:'text/csv'}))}catch(error){toast(error.message,'error')}});
-$('#commitImport').addEventListener('click',commitImport);$('#settingsForm').addEventListener('submit',saveSettings);$('#checkConnection').addEventListener('click',checkConnection);$('#startLogin').addEventListener('click',startLogin);
+$('#commitImport').addEventListener('click',commitImport);$('#settingsForm').addEventListener('submit',saveSettings);$('#checkConnection').addEventListener('click',checkConnection);$('#checkTemuConnection').addEventListener('click',checkTemuConnection);$('#startLogin').addEventListener('click',startLogin);
 $('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id,activeTemplate)});$('#stockFromProduct').addEventListener('change',()=>{if($('#stockFromProduct').checked)syncOfferPrice()});$('#applyTemplate').addEventListener('click',applySelectedTemplate);$('#saveTemplate').addEventListener('click',saveTemplate);$('#deleteTemplate').addEventListener('click',deleteTemplate);$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
 $('#preorder').addEventListener('change',togglePreorder);$('#responsibleProducer').addEventListener('change',updateProducerHint);
 $('#refreshOrders').addEventListener('click',loadOrders);
-navigate(location.hash.slice(1)||'dashboard');
+setPlatform(activePlatform,false);navigate(location.hash.slice(1)||'dashboard');

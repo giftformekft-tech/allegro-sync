@@ -17,6 +17,7 @@ from .database import Database
 from .importer import parse_csv
 from .invoices import InvoiceError, InvoiceService
 from .offers import OfferService, suggested_parameter_source, suggested_parameter_value
+from .temu import TemuClient, TemuError
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +55,10 @@ class Application:
     @property
     def invoices(self) -> InvoiceService:
         return InvoiceService(self.config, self.database, self.client)
+
+    @property
+    def temu(self) -> TemuClient:
+        return TemuClient(self.config, self.database)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -174,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "template": template}, HTTPStatus.CREATED)
             elif self.path == "/api/auth/check":
                 self._json(self.app.auth.check_application())
+            elif self.path == "/api/temu/check":
+                self._json(self.app.temu.check_connection())
             elif self.path == "/api/auth/device/start":
                 self._json(self.app.auth.start_device_flow())
             elif self.path == "/api/auth/device/poll":
@@ -210,7 +217,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
-        except (ValueError, AllegroError, InvoiceError) as exc:
+        except (ValueError, AllegroError, InvoiceError, TemuError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -241,6 +248,10 @@ class Handler(BaseHTTPRequestHandler):
                 "client_secret": "ALLEGRO_CLIENT_SECRET",
                 "user_agent": "ALLEGRO_USER_AGENT",
                 "language": "ALLEGRO_LANGUAGE",
+                "temu_endpoint": "TEMU_ENDPOINT",
+                "temu_app_key": "TEMU_APP_KEY",
+                "temu_app_secret": "TEMU_APP_SECRET",
+                "temu_access_token": "TEMU_ACCESS_TOKEN",
                 "invoice_driver": "INVOICE_DRIVER",
                 "szamlazz_agent_key": "SZAMLAZZ_AGENT_KEY",
                 "invoice_prefix": "SZAMLAZZ_INVOICE_PREFIX",

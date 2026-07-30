@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from urllib.parse import urlparse
 
 
 ENV_KEYS = (
@@ -12,6 +13,10 @@ ENV_KEYS = (
     "ALLEGRO_USER_AGENT",
     "ALLEGRO_LANGUAGE",
     "ALLEGRO_RATE_LIMIT_PER_MINUTE",
+    "TEMU_ENDPOINT",
+    "TEMU_APP_KEY",
+    "TEMU_APP_SECRET",
+    "TEMU_ACCESS_TOKEN",
     "INVOICE_DRIVER",
     "SZAMLAZZ_AGENT_KEY",
     "SZAMLAZZ_INVOICE_PREFIX",
@@ -37,6 +42,7 @@ class AppConfig:
             "ALLEGRO_ENV": "sandbox",
             "ALLEGRO_LANGUAGE": "hu-HU",
             "ALLEGRO_RATE_LIMIT_PER_MINUTE": "4000",
+            "TEMU_ENDPOINT": "https://openapi-b-eu.temu.com/openapi/router",
             "INVOICE_DRIVER": "none",
             "SZAMLAZZ_SEND_EMAIL": "false",
         }
@@ -81,6 +87,13 @@ class AppConfig:
             "client_secret_set": bool(self.values.get("ALLEGRO_CLIENT_SECRET", "")),
             "user_agent": self.values.get("ALLEGRO_USER_AGENT", ""),
             "language": self.values.get("ALLEGRO_LANGUAGE", "hu-HU"),
+            "temu_endpoint": self.values.get(
+                "TEMU_ENDPOINT", "https://openapi-b-eu.temu.com/openapi/router"
+            ),
+            "temu_app_key": self.values.get("TEMU_APP_KEY", ""),
+            "temu_app_secret_set": bool(self.values.get("TEMU_APP_SECRET", "")),
+            "temu_access_token_set": bool(self.values.get("TEMU_ACCESS_TOKEN", "")),
+            "temu_ready": not self.temu_validation(),
             "invoice_driver": self.values.get("INVOICE_DRIVER", "none"),
             "szamlazz_agent_key_set": bool(self.values.get("SZAMLAZZ_AGENT_KEY", "")),
             "invoice_prefix": self.values.get("SZAMLAZZ_INVOICE_PREFIX", ""),
@@ -102,6 +115,20 @@ class AppConfig:
         user_agent = self.values.get("ALLEGRO_USER_AGENT", "")
         if not re.match(r"^\S+/\S+ \(\+https://[^)]+\)$", user_agent):
             problems.append("A User-Agent formátuma: Nev/Verzio (+https://elerheto-url)")
+        return problems
+
+    def temu_validation(self) -> list[str]:
+        problems: list[str] = []
+        endpoint = self.values.get("TEMU_ENDPOINT", "")
+        parsed = urlparse(endpoint)
+        if parsed.scheme != "https" or not parsed.netloc:
+            problems.append("A Temu API-végpontnak érvényes HTTPS-címnek kell lennie.")
+        if not self.values.get("TEMU_APP_KEY"):
+            problems.append("Hiányzik a Temu App Key.")
+        if not self.values.get("TEMU_APP_SECRET"):
+            problems.append("Hiányzik a Temu App Secret.")
+        if not self.values.get("TEMU_ACCESS_TOKEN"):
+            problems.append("Hiányzik a Temu Access Token.")
         return problems
 
     def save(self, updates: dict[str, str]) -> None:

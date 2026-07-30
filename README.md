@@ -1,8 +1,8 @@
 # allegro-sync
 
-Modern, helyben futó Allegro-kezelő a [forme.hu](https://forme.hu) egyedi mintás
-ajándéktárgy-webshophoz: termékimport, Allegro API-kapcsolat, később
-rendelésszinkron és szamlazz.hu számlázás.
+Modern, helyben futó marketplace-kezelő a [forme.hu](https://forme.hu) egyedi
+mintás ajándéktárgy-webshophoz. Az Allegro működő modulja mellé megkezdődött a
+Temu Open Platform integráció is, ugyanabban a kapcsolható felületben.
 
 > **Státusz: működő első alkalmazásverzió.** A kattintásos Python-felület,
 > a CSV-előnézet és -validálás, a helyi SQLite állapottár, a terméklista,
@@ -25,6 +25,12 @@ python run.py
 Windows alatt a `start-allegro-sync.bat` fájlra duplán kattintva is indul.
 Az alkalmazás megnyitja a böngészőt a `http://127.0.0.1:8765` címen. Első
 indítás után:
+
+Az oldal tetején az **Allegro / Temu** választóval lehet platformot váltani. A
+Temu első fázisában a Beállítások oldalon menthető az EU API-végpont, az App
+Key, az App Secret és az Access Token, a Kapcsolatok oldalon pedig valódi
+Open Platform kéréssel tesztelhető a hozzáférés. A titkos értékeket a felület
+nem olvassa vissza.
 
 1. **Beállítások:** add meg a sandbox Client ID-t, Client Secretet és a
    szabályos User-Agentet.

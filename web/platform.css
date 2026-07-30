@@ -1,0 +1,51 @@
+.platform-switch {
+  height: 38px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px 0 12px;
+}
+
+.platform-switch span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.platform-switch select {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  outline: 0;
+  cursor: pointer;
+}
+
+.temu-logo { background: #17181b; color: #fff; }
+.temu-card { border-top: 3px solid #17181b; }
+.temu-only { display: none; }
+.settings-save { grid-column: 1 / -1; }
+.temu-only.coming-soon .temu-logo { margin: 0 auto 15px; }
+
+body[data-platform="temu"] .allegro-only { display: none !important; }
+body[data-platform="temu"] .temu-only { display: block; }
+body[data-platform="temu"] .brand-mark { background: #fff; color: #17181b; }
+body[data-platform="temu"] .nav-item.active svg { color: #fff; }
+body[data-platform="temu"] .primary {
+  background: #17181b;
+  border-color: #17181b;
+  box-shadow: none;
+}
+body[data-platform="temu"] .primary:hover { background: #303238; }
+
+@media (max-width: 760px) {
+  .platform-switch span { display: none; }
+  .platform-switch { padding: 0 5px; }
+  .platform-switch select { max-width: 72px; }
+}

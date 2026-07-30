@@ -6,6 +6,7 @@ import re
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
@@ -22,6 +23,7 @@ from allegro_app.offers import (
     suggested_parameter_value,
 )
 from allegro_app.server import Application, AppServer
+from allegro_app.temu import TemuClient, sign_payload
 
 
 SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;length_cm;width_cm
@@ -540,6 +542,65 @@ class InvoiceTests(unittest.TestCase):
             self.assertEqual(1, service.allegro.posts)  # type: ignore[attr-defined]
 
 
+class TemuTests(unittest.TestCase):
+    def test_sign_payload_has_stable_uppercase_signature(self) -> None:
+        payload = {
+            "type": "bg.open.accesstoken.info.get",
+            "app_key": "app-123",
+            "access_token": "token-456",
+            "timestamp": "1785398400",
+            "data_type": "JSON",
+        }
+        self.assertEqual(
+            "7B09022E3227829FD2C714DAD7FBDD2D",
+            sign_payload(payload, "secret-789"),
+        )
+
+    def test_connection_check_sends_signed_open_platform_request(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"success":true,"requestId":"request-1"}'
+
+        captured: list[Request] = []
+
+        def open_request(request: Request, timeout: int):
+            self.assertEqual(30, timeout)
+            captured.append(request)
+            return Response()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text(
+                "\n".join((
+                    "TEMU_ENDPOINT=https://openapi-b-eu.temu.com/openapi/router",
+                    "TEMU_APP_KEY=app-123",
+                    "TEMU_APP_SECRET=secret-789",
+                    "TEMU_ACCESS_TOKEN=token-456",
+                )),
+                encoding="utf-8",
+            )
+            config = AppConfig.load(root)
+            database = Database(root / "state.sqlite")
+            client = TemuClient(config, database, clock=lambda: 1785398400)
+            with patch("allegro_app.temu.urlopen", side_effect=open_request):
+                result = client.check_connection()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("request-1", result["request_id"])
+        self.assertEqual(
+            "https://openapi-b-eu.temu.com/openapi/router", captured[0].full_url
+        )
+        body = json.loads(captured[0].data)
+        self.assertEqual("bg.open.accesstoken.info.get", body["type"])
+        self.assertEqual("7B09022E3227829FD2C714DAD7FBDD2D", body["sign"])
+
+
 class WebAssetTests(unittest.TestCase):
     def test_javascript_element_ids_exist_and_are_unique(self) -> None:
         root = Path(__file__).resolve().parent.parent
@@ -563,12 +624,19 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".env").write_text(
-                'ALLEGRO_ENV="sandbox"\nALLEGRO_CLIENT_SECRET="top-secret"\n', encoding="utf-8"
+                'ALLEGRO_ENV="sandbox"\nALLEGRO_CLIENT_SECRET="top-secret"\n'
+                'TEMU_APP_KEY="public-app"\nTEMU_APP_SECRET="temu-secret"\n'
+                'TEMU_ACCESS_TOKEN="temu-token"\n',
+                encoding="utf-8",
             )
             config = AppConfig.load(root)
             public = config.public_values()
             self.assertTrue(public["client_secret_set"])
+            self.assertTrue(public["temu_app_secret_set"])
+            self.assertTrue(public["temu_access_token_set"])
             self.assertNotIn("top-secret", public.values())
+            self.assertNotIn("temu-secret", public.values())
+            self.assertNotIn("temu-token", public.values())
 
 
 class ApiTests(unittest.TestCase):
