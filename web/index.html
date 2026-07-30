@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111214">
+  <title>Allegro Sync</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <svg aria-hidden="true" class="svg-defs">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7 8 4 8-4v10l-8 4-8-4V7Z"/><path d="M12 11v10"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 3h2l2.4 11.3a2 2 0 0 0 2 1.7h7.7a2 2 0 0 0 2-1.6L21 7H6"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4.3 2.7 17.2A1.8 1.8 0 0 0 4.2 20h15.6a1.8 1.8 0 0 0 1.5-2.8L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><div class="brand-mark">a</div><div><strong>Allegro Sync</strong><span>forme.hu</span></div></div>
+      <nav aria-label="Fő navigáció">
+        <button class="nav-item active" data-view="dashboard"><svg><use href="#i-grid"/></svg><span>Áttekintés</span></button>
+        <button class="nav-item" data-view="products"><svg><use href="#i-box"/></svg><span>Termékek</span><b id="navProductCount">0</b></button>
+        <button class="nav-item" data-view="orders"><svg><use href="#i-cart"/></svg><span>Rendelések</span></button>
+        <button class="nav-item" data-view="import"><svg><use href="#i-upload"/></svg><span>Importálás</span></button>
+        <div class="nav-label">Rendszer</div>
+        <button class="nav-item" data-view="integrations"><svg><use href="#i-link"/></svg><span>Kapcsolatok</span></button>
+        <button class="nav-item" data-view="settings"><svg><use href="#i-settings"/></svg><span>Beállítások</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="environment"><i></i><span id="environmentLabel">Sandbox mód</span></div>
+        <span>v0.1 · helyi alkalmazás</span>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="mobileMenu"><svg><use href="#i-menu"/></svg></button>
+        <div><p id="eyebrow">Műveleti központ</p><h1 id="pageTitle">Áttekintés</h1></div>
+        <div class="top-actions"><div class="status-pill" id="globalStatus"><i></i><span>Betöltés…</span></div><button class="avatar">FS</button></div>
+      </header>
+
+      <section class="view active" id="view-dashboard">
+        <div class="hero card">
+          <div><span class="kicker">MAI ÁLLAPOT</span><h2>Jó reggelt! Innen indul az Allegro működésed.</h2><p id="heroText">Ellenőrizzük a kapcsolatokat és az importált kínálatot.</p></div>
+          <button class="primary" data-go="import"><svg><use href="#i-upload"/></svg>Termékek importálása</button>
+        </div>
+        <div class="stats-grid">
+          <article class="stat card"><div class="stat-icon orange"><svg><use href="#i-box"/></svg></div><div><span>Termékváltozat</span><strong id="statProducts">0</strong><small id="statDrafts">0 piszkozat</small></div></article>
+          <article class="stat card"><div class="stat-icon green"><svg><use href="#i-check"/></svg></div><div><span>Feltöltésre kész</span><strong id="statReady">0</strong><small>validált ajánlat</small></div></article>
+          <article class="stat card"><div class="stat-icon blue"><svg><use href="#i-cart"/></svg></div><div><span>Nyitott rendelés</span><strong id="statOrders">0</strong><small>szinkron még nincs bekötve</small></div></article>
+          <article class="stat card"><div class="stat-icon violet"><svg><use href="#i-grid"/></svg></div><div><span>Összes készlet</span><strong id="statStock">0</strong><small>darab az importban</small></div></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="card panel"><div class="panel-head"><div><span class="kicker">INDULÁSI ELLENŐRZÉS</span><h3>Következő lépések</h3></div><span class="progress-label" id="progressLabel">0/3</span></div><div class="progress"><i id="progressBar"></i></div><div class="checklist" id="checklist"></div></article>
+          <article class="card panel"><div class="panel-head"><div><span class="kicker">NAPLÓ</span><h3>Legutóbbi aktivitás</h3></div><button class="text-button" id="refreshDashboard">Frissítés</button></div><div class="timeline" id="activityList"></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="view-products">
+        <div class="section-actions"><label class="search"><svg><use href="#i-search"/></svg><input id="productSearch" placeholder="Keresés név vagy SKU alapján…"></label><button class="primary" data-go="import"><svg><use href="#i-upload"/></svg>Új import</button></div>
+        <article class="card table-card"><div class="table-head"><div><span class="kicker">KÍNÁLAT</span><h3>Termékváltozatok</h3></div><span class="muted" id="productResultCount">0 találat</span></div><div class="table-wrap"><table><thead><tr><th>Termék</th><th>SKU</th><th>Variáns</th><th>Ár</th><th>Készlet</th><th>Állapot</th></tr></thead><tbody id="productRows"></tbody></table><div class="empty-table" id="productEmpty"><div class="empty-icon"><svg><use href="#i-box"/></svg></div><h3>Még nincs importált termék</h3><p>Húzd be a forme.hu exportját az Importálás oldalon.</p><button class="secondary" data-go="import">Import indítása</button></div></div></article>
+      </section>
+
+      <section class="view" id="view-orders">
+        <article class="card coming-soon"><div class="coming-visual"><div class="orbit"></div><svg><use href="#i-cart"/></svg></div><span class="badge neutral">2. fejlesztési ütem</span><h2>Rendelések és számlák egy helyen</h2><p>Az Allegro rendelési eseményfolyam, a szamlazz.hu számlakiállítás és a PDF visszatöltése ide kerül. Az API-csatlakozási pont a meglévő kódban már elő van készítve.</p><button class="secondary" data-go="integrations">Kapcsolatok előkészítése</button></article>
+      </section>
+
+      <section class="view" id="view-import">
+        <div class="two-col import-layout">
+          <article class="card panel"><span class="kicker">1. LÉPÉS</span><h2>CSV beolvasása</h2><p class="muted">A forme.hu Allegro-exportját ellenőrizzük, mielőtt bármi az API felé menne.</p><label class="dropzone" id="dropzone"><input type="file" id="csvFile" accept=".csv,text/csv"><div class="upload-mark"><svg><use href="#i-upload"/></svg></div><strong>Húzd ide a CSV-t</strong><span>vagy kattints a fájl kiválasztásához</span><small>UTF-8 · pontosvessző vagy vessző · maximum 10 MB</small></label><button class="secondary wide" id="useSample">Mintafájl betöltése</button></article>
+          <article class="card panel import-guide"><span class="kicker">SZÜKSÉGES ADATOK</span><h3>Mit várunk az exportban?</h3><div class="schema-list"><div><b>01</b><span><strong>Azonosítás</strong><small>sku, parent_sku, name, type</small></span></div><div><b>02</b><span><strong>Variáns</strong><small>color, size, price_huf, stock</small></span></div><div><b>03</b><span><strong>Tartalom</strong><small>description, image_url, brand</small></span></div></div><div class="notice"><svg><use href="#i-alert"/></svg><p><strong>EAN nélkül dolgozunk.</strong><br>A feltöltés előtt a célkategória GTIN-szabályát külön ellenőrizni kell.</p></div></article>
+        </div>
+        <article class="card table-card hidden" id="previewCard"><div class="table-head"><div><span class="kicker">2. LÉPÉS</span><h3>Import-előnézet</h3></div><div class="preview-summary" id="previewSummary"></div></div><div class="table-wrap preview-table"><table><thead><tr><th>Sor</th><th>Termék / cím</th><th>SKU</th><th>Ár</th><th>Készlet</th><th>Ellenőrzés</th></tr></thead><tbody id="previewRows"></tbody></table></div><div class="commit-bar"><p><strong id="commitCount">0 megfelelő sor</strong><span>A hibás sorokat nem mentjük el.</span></p><button class="primary" id="commitImport"><svg><use href="#i-check"/></svg>Megfelelő sorok importálása</button></div></article>
+      </section>
+
+      <section class="view" id="view-integrations">
+        <div class="integrations-grid">
+          <article class="card integration-card featured"><div class="integration-logo allegro-logo">a</div><div class="integration-body"><div class="integration-title"><div><h3>Allegro API</h3><p>Termékek, ajánlatok és rendelések</p></div><span class="badge" id="allegroBadge">Nincs beállítva</span></div><div class="connection-facts"><div><span>Környezet</span><strong id="connectionEnvironment">Sandbox</strong></div><div><span>Alkalmazás</span><strong id="connectionApp">Nincs ellenőrizve</strong></div><div><span>Eladói fiók</span><strong id="connectionUser">Nincs csatlakoztatva</strong></div></div><div class="button-row"><button class="secondary" id="checkConnection">Alkalmazás tesztelése</button><button class="primary" id="startLogin">Eladói fiók csatlakoztatása</button></div><div class="device-login hidden" id="deviceLogin"><span>Jóváhagyási kód</span><strong id="deviceCode">—</strong><a id="deviceLink" target="_blank" rel="noopener">Megnyitás az Allegrón <svg><use href="#i-arrow"/></svg></a><small id="deviceStatus">Várakozás a jóváhagyásra…</small></div></div></article>
+          <article class="card integration-card"><div class="integration-logo invoice-logo">sz</div><div class="integration-body"><div class="integration-title"><div><h3>szamlazz.hu</h3><p>Automatikus HUF számlázás</p></div><span class="badge neutral">Előkészítve</span></div><p class="integration-copy">A Számla Agent kulcs menthető, az XML számlakiállítás a rendelési modullal együtt érkezik.</p><button class="secondary" data-go="settings">Beállítások megnyitása</button></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <form class="settings-grid" id="settingsForm">
+          <article class="card panel"><span class="kicker">ALLEGRO</span><h3>API-kapcsolat</h3><div class="field-row"><label><span>Környezet</span><select name="environment"><option value="sandbox">Sandbox (teszt)</option><option value="production">Production (éles)</option></select></label><label><span>Nyelv</span><select name="language"><option value="hu-HU">Magyar · hu-HU</option><option value="en-US">Angol · en-US</option><option value="pl-PL">Lengyel · pl-PL</option></select></label></div><label><span>Client ID</span><input name="client_id" autocomplete="off" placeholder="Allegro alkalmazásazonosító"></label><label><span>Client Secret</span><input name="client_secret" type="password" autocomplete="new-password" placeholder="Hagyd üresen a meglévő megtartásához"><small id="secretHint"></small></label><label><span>User-Agent</span><input name="user_agent" placeholder="formeAllegroSync/1.0.0 (+https://forme.hu/allegro-sync)"><small>Az alkalmazás neve és egy elérhető HTTPS információs oldal kötelező.</small></label></article>
+          <article class="card panel"><span class="kicker">SZÁMLÁZÁS</span><h3>szamlazz.hu</h3><label><span>Számlázó modul</span><select name="invoice_driver"><option value="none">Kikapcsolva</option><option value="szamlazz">Számla Agent</option></select></label><label><span>Agent kulcs</span><input name="szamlazz_agent_key" type="password" autocomplete="new-password" placeholder="Hagyd üresen a meglévő megtartásához"><small id="agentHint"></small></label><label><span>Számla előtag</span><input name="invoice_prefix" placeholder="pl. ALLEGRO"></label><div class="notice"><svg><use href="#i-alert"/></svg><p>Induláskor HUF és 27% ÁFA az alapértelmezett. Élesítés előtt a számlázó XML-sémát a saját fiók dokumentációjával ellenőrizni kell.</p></div></article>
+          <div class="settings-save"><p><strong>A kulcsokat a helyi .env fájl tárolja.</strong><span>Ez a fájl ki van zárva a Gitből.</span></p><button class="primary" type="submit">Beállítások mentése</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <div class="toast-stack" id="toasts" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

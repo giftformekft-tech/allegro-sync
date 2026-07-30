@@ -1,12 +1,41 @@
 # allegro-sync
 
-Allegro-integráció a [forme.hu](https://forme.hu) egyedi mintás ajándéktárgy-webshophoz:
-termékfeltöltés CSV/XLSX-ből, rendelésszinkron és szamlazz.hu számlázás.
+Modern, helyben futó Allegro-kezelő a [forme.hu](https://forme.hu) egyedi mintás
+ajándéktárgy-webshophoz: termékimport, Allegro API-kapcsolat, később
+rendelésszinkron és szamlazz.hu számlázás.
 
-> **Státusz: tervezés.** Kód még nincs. A fejlesztés a terv 0. fázisával kezdődik,
-> ami egy go/no-go döntés – lásd alább.
+> **Státusz: működő első alkalmazásverzió.** A kattintásos Python-felület,
+> a CSV-előnézet és -validálás, a helyi SQLite állapottár, a terméklista,
+> a beállításkezelés és az Allegro OAuth-kapcsolat ellenőrzése elkészült.
+> A tényleges ajánlatfeltöltés, rendelés- és számlaszinkron következő ütem.
 
-## Mit csinál majd
+## Gyors indítás
+
+Python 3.11 vagy újabb szükséges, külső csomagot nem kell telepíteni.
+
+```powershell
+python run.py
+```
+
+Windows alatt a `start-allegro-sync.bat` fájlra duplán kattintva is indul.
+Az alkalmazás megnyitja a böngészőt a `http://127.0.0.1:8765` címen. Első
+indítás után:
+
+1. **Beállítások:** add meg a sandbox Client ID-t, Client Secretet és a
+   szabályos User-Agentet.
+2. **Kapcsolatok:** teszteld az alkalmazást, majd csatlakoztasd az eladói fiókot.
+3. **Importálás:** húzd be az Allegro CSV-t, ellenőrizd a hibákat, majd mentsd
+   a megfelelő sorokat.
+
+Automata tesztek:
+
+```powershell
+python -m unittest discover -s tests_python -v
+```
+
+Részletes használat: [`docs/kezelo-felulet.md`](docs/kezelo-felulet.md).
+
+## A teljes célfolyamat
 
 A forme.hu WooCommerce-boltja (a `mockup-generator` plugin) exportál egy CSV-t
 a termékvariánsokról. Ez a program beolvassa, feltölti az Allegróra, majd
@@ -29,6 +58,7 @@ forme.hu CSV ─► képfeltöltés ─► katalógustermék ─► ajánlat (in
 | Fájl | Tartalom |
 |---|---|
 | [`docs/allegro-integracio-terv.md`](docs/allegro-integracio-terv.md) | **A teljes fejlesztési terv** – architektúra, API-végpontok, fázisok, kockázatok |
+| [`docs/kezelo-felulet.md`](docs/kezelo-felulet.md) | A kattintásos alkalmazás telepítése, használata és jelenlegi határai |
 | `Allegro Developer Portal - baza wiedzy o Allegro REST API.pdf` | A hivatalos OpenAPI-referencia (473 oldal, 279 végpont) |
 
 ## Rögzített keretek
@@ -51,11 +81,11 @@ szín×méret önálló ajánlat: 1 minta × 3 típus × 5 szín × 6 méret = *
 A termékjavaslat havi 20 000 új katalógustermékre van maximálva, tehát a
 szín- és méretskála szűkítése kapacitáskérdés, nem ízlés.
 
-## Következő lépés
+## Következő fejlesztési lépés
 
-A terv **0. fázisa**: kategória-felderítő, ami a célkategóriákra kiírja, hogy
-a GTIN kötelező-e és javasolható-e saját termék. Amíg ez a tábla nincs meg,
-keretrendszert írni kockázat.
+A kezelőfelület következő modulja a **kategória-felderítő**: a célkategóriákra
+megmutatja, hogy a GTIN kötelező-e és javasolható-e saját termék. Ezt sandbox
+fiókkal le kell futtatni a tényleges ajánlatfeltöltő bekapcsolása előtt.
 
 Tesztelés lépésről lépésre: [`docs/teszteles.md`](docs/teszteles.md)
 

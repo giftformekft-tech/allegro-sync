@@ -12,7 +12,10 @@ var/
 # Függőségek
 vendor/
 composer.lock
+__pycache__/
+*.py[cod]
 
 # Munkafájlok
 *.log
 .DS_Store
+tmp/
