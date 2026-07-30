@@ -598,7 +598,73 @@ class TemuTests(unittest.TestCase):
         )
         body = json.loads(captured[0].data)
         self.assertEqual("bg.open.accesstoken.info.get", body["type"])
+        self.assertEqual(1785398400, body["timestamp"])
         self.assertEqual("7B09022E3227829FD2C714DAD7FBDD2D", body["sign"])
+
+    def test_temu_success_code_is_not_treated_as_error(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"success":true,"errorCode":1000000,"result":{}}'
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text(
+                "TEMU_APP_KEY=a\nTEMU_APP_SECRET=b\nTEMU_ACCESS_TOKEN=c\n",
+                encoding="utf-8",
+            )
+            client = TemuClient(AppConfig.load(root), Database(root / "state.sqlite"))
+            with patch("allegro_app.temu.urlopen", return_value=Response()):
+                self.assertTrue(client.request("example")["success"])
+
+    def test_category_and_template_responses_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text(
+                "TEMU_APP_KEY=a\nTEMU_APP_SECRET=b\nTEMU_ACCESS_TOKEN=c\n",
+                encoding="utf-8",
+            )
+            client = TemuClient(AppConfig.load(root), Database(root / "state.sqlite"))
+            category_response = {
+                "result": {"goodsCatsList": [
+                    {"catId": 20, "parentId": 10, "catName": "T-Shirts", "level": 3, "leaf": True},
+                    {"catId": 19, "parentId": 10, "catName": "Polos", "level": 3, "leaf": True},
+                ]}
+            }
+            template_response = {"result": {
+                "inputMaxSpecNum": 0,
+                "singleSpecValueNum": 500,
+                "templateInfo": {
+                    "goodsSpecProperties": [{
+                        "pid": 13, "refPid": 63, "templatePid": 259449,
+                        "parentSpecId": 1001, "name": "Color", "required": True,
+                        "isSale": True, "mainSale": True, "controlType": 1,
+                        "values": [{"vid": 32560, "specId": 22028, "value": "Black",
+                                    "group": {"name": "Black Color Family"}}],
+                    }],
+                    "goodsProperties": [{
+                        "pid": 1, "refPid": 1920, "templatePid": 988850,
+                        "name": "Material", "required": True, "isSale": False,
+                        "controlType": 1, "chooseMaxNum": 1,
+                        "showType": 0,
+                        "values": [{"vid": 56, "value": "Cotton"}],
+                    }],
+                },
+            }}
+            with patch.object(client, "request", return_value=category_response):
+                categories = client.categories(10)
+            self.assertEqual(["Polos", "T-Shirts"], [row["name"] for row in categories["categories"]])
+            with patch.object(client, "request", return_value=template_response):
+                template = client.category_template(20)
+            self.assertEqual("Color", template["sales_properties"][0]["name"])
+            self.assertEqual("22028", template["sales_properties"][0]["values"][0]["spec_id"])
+            self.assertEqual("Material", template["properties"][0]["name"])
+            self.assertEqual(0, template["properties"][0]["show_type"])
 
 
 class WebAssetTests(unittest.TestCase):

@@ -32,6 +32,14 @@ Key, az App Secret és az Access Token, a Kapcsolatok oldalon pedig valódi
 Open Platform kéréssel tesztelhető a hozzáférés. A titkos értékeket a felület
 nem olvassa vissza.
 
+A **Temu feltöltés** oldalon az alkalmazás az élő kategóriafát és a kiválasztott
+végső kategória sablonját kéri le. A Temu által kötelezővé tett listás,
+szabadon beírható, többértékű, mértékegységes és gyakori feltételes mezőkből
+dinamikus űrlap készül. A WooCommerce színek és méretek a Temu engedélyezett
+variánsértékeihez rendelhetők; egy kiválasztott szín–típus sor minden importált
+mérete együtt kerül a feltöltési tervbe. A „Kiválasztás ellenőrzése” ebben a
+fázisban csak előnézetet készít, terméket még nem publikál.
+
 1. **Beállítások:** add meg a sandbox Client ID-t, Client Secretet és a
    szabályos User-Agentet.
 2. **Kapcsolatok:** teszteld az alkalmazást, majd csatlakoztasd az eladói fiókot.

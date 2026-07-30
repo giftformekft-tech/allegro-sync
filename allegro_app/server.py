@@ -129,6 +129,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"category": category})
             elif parsed.path == "/api/settings":
                 self._json(self.app.config.public_values())
+            elif parsed.path == "/api/temu/categories":
+                query = urllib.parse.parse_qs(parsed.query)
+                parent_id = int(query.get("parent_id", ["0"])[0] or 0)
+                self._json(self.app.temu.categories(parent_id))
+            elif parsed.path.startswith("/api/temu/categories/") and parsed.path.endswith("/template"):
+                category_id = int(
+                    parsed.path.removeprefix("/api/temu/categories/")
+                    .removesuffix("/template").strip("/")
+                )
+                self._json({"template": self.app.temu.category_template(category_id)})
             elif parsed.path == "/api/marketplace":
                 self._json({"marketplace": self.app.offers.marketplace()})
             elif parsed.path == "/api/offer-options":
@@ -141,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._static(parsed.path)
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
-        except (ValueError, AllegroError, InvoiceError) as exc:
+        except (ValueError, AllegroError, InvoiceError, TemuError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)

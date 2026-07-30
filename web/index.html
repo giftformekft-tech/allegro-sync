@@ -78,7 +78,24 @@
       </section>
 
       <section class="view" id="view-upload">
-        <article class="card coming-soon temu-only"><div class="integration-logo temu-logo">t</div><span class="kicker">TEMU OPEN PLATFORM</span><h2>A Temu-termékfeltöltés következik</h2><p>Előbb mentsd el és teszteld a Temu API-kapcsolatot. Ezután ide kerül a pólóvariánsok kiválasztása, megfeleltetése és feltöltése.</p><button class="primary" data-go="integrations">Temu-kapcsolat beállítása</button></article>
+        <div class="temu-only temu-wizard">
+          <article class="card panel">
+            <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">TEMU KATEGÓRIA</span><h2>Élő kategóriafa</h2><p class="muted">A kategóriák és a mezők közvetlenül a Temu Open Platformból érkeznek.</p></div></div>
+            <div class="temu-category-toolbar"><button class="secondary" id="temuCategoryBack">← Vissza</button><button class="text-button" id="temuCategoryRoot">Főkategóriák</button><span id="temuBreadcrumb">Főkategóriák</span></div>
+            <div class="category-results temu-category-results" id="temuCategoryResults"><div class="wizard-empty">A Temu kategóriák betöltése…</div></div>
+          </article>
+          <article class="card panel hidden" id="temuTemplateInspector">
+            <div class="wizard-heading"><span class="step-number">2</span><div><span class="kicker">VARIÁNSOK ÉS PARAMÉTEREK</span><h2 id="temuCategoryName">Temu kategória</h2><p class="muted" id="temuTemplateSummary"></p></div><span class="badge neutral">Élő séma</span></div>
+            <div class="parameter-head"><div><h3>Exportálandó termékcsalád</h3><p class="muted">A szín–típus sorok minden elérhető mérete együtt marad.</p></div><select id="temuProductFamily"><option value="">Válassz importált termékcsaládot…</option></select></div>
+            <div class="temu-variant-rows" id="temuVariantRows"><div class="wizard-empty">Válassz termékcsaládot a variánsok megjelenítéséhez.</div></div>
+            <div class="temu-parameter-columns">
+              <section><div class="parameter-head"><div><h3>Szín- és méretmegfeleltetés</h3><p class="muted">A WooCommerce értékét rendeld a Temu kategória engedélyezett értékéhez.</p></div></div><div id="temuSaleMappings" class="temu-mapping-list"></div></section>
+              <section><div class="parameter-head"><div><h3>Kötelező termékadatok</h3><p class="muted">Csak az élő kategóriaséma által kért mezők.</p></div></div><div id="temuRequiredProperties" class="temu-mapping-list"></div></section>
+            </div>
+            <div class="template-save"><div><strong>Feltöltési terv ellenőrzése</strong><small>Ez még nem küldi el a terméket a Temunak.</small></div><button class="primary" id="previewTemuSelection">Kiválasztás ellenőrzése</button></div>
+            <div class="payload-wrap hidden" id="temuSelectionWrap"><div class="payload-head"><strong>Temu feltöltési terv</strong><span>bg.local.goods.add előkészítés</span></div><pre id="temuSelectionPayload"></pre></div>
+          </article>
+        </div>
         <div class="upload-wizard allegro-only">
           <article class="card panel wizard-card">
             <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">KATEGÓRIA</span><h2>Pólókategória felderítése</h2><p class="muted">Az Allegro élő adataiból ellenőrizzük a GTIN-t és a kötelező paramétereket.</p></div></div>

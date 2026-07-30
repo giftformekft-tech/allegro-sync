@@ -59,7 +59,7 @@ class TemuClient:
             "type": api_type,
             "app_key": self.config.values["TEMU_APP_KEY"],
             "access_token": self.config.values["TEMU_ACCESS_TOKEN"],
-            "timestamp": str(int(self.clock())),
+            "timestamp": int(self.clock()),
             "data_type": "JSON",
         }
         if parameters:
@@ -88,7 +88,8 @@ class TemuClient:
             raise TemuError("A Temu API válasza nem JSON objektum.")
         success = result.get("success")
         error_code = result.get("errorCode") or result.get("error_code") or result.get("code")
-        if success is False or (error_code not in (None, "", 0, "0", "SUCCESS")):
+        success_codes = (None, "", 0, "0", 1000000, "1000000", "SUCCESS")
+        if success is False or (success is not True and error_code not in success_codes):
             message = (
                 result.get("errorMsg")
                 or result.get("error_msg")
@@ -97,6 +98,109 @@ class TemuClient:
             )
             raise TemuError(f"Temu API-hiba ({error_code or 'ismeretlen'}): {message}")
         return result
+
+    @staticmethod
+    def _result(result: dict) -> dict:
+        payload = result.get("result")
+        if not isinstance(payload, dict):
+            raise TemuError("A Temu API válaszából hiányzik a result objektum.")
+        return payload
+
+    def categories(self, parent_id: int = 0) -> dict[str, object]:
+        result = self._result(
+            self.request("bg.local.goods.cats.get", {"parentCatId": parent_id})
+        )
+        rows = result.get("goodsCatsList")
+        if not isinstance(rows, list):
+            rows = []
+        categories = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            categories.append({
+                "id": str(row.get("catId", "")),
+                "parent_id": str(row.get("parentId", parent_id)),
+                "name": str(row.get("catName", "")),
+                "level": int(row.get("level", 0) or 0),
+                "leaf": bool(row.get("leaf", False)),
+            })
+        categories.sort(key=lambda item: str(item["name"]).casefold())
+        return {"parent_id": str(parent_id), "categories": categories}
+
+    @staticmethod
+    def _property(row: object) -> dict[str, object] | None:
+        if not isinstance(row, dict):
+            return None
+        values = []
+        for value in row.get("values") or []:
+            if not isinstance(value, dict):
+                continue
+            group = value.get("group") if isinstance(value.get("group"), dict) else {}
+            values.append({
+                "vid": str(value.get("vid", "")),
+                "spec_id": str(value.get("specId", "")),
+                "value": str(value.get("value", "")),
+                "group": str(group.get("name", "")),
+            })
+        units = []
+        for unit in row.get("valueUnitList") or []:
+            if not isinstance(unit, dict):
+                continue
+            units.append({
+                "id": str(unit.get("valueUnitId", unit.get("id", ""))),
+                "name": str(unit.get("valueUnit", unit.get("name", ""))),
+            })
+        show_condition = row.get("showCondition")
+        if not isinstance(show_condition, dict):
+            show_condition = {}
+        parent_values = row.get("templatePropertyValueParentList")
+        if not isinstance(parent_values, list):
+            parent_values = []
+        return {
+            "pid": str(row.get("pid", "")),
+            "ref_pid": str(row.get("refPid", "")),
+            "template_pid": str(row.get("templatePid", "")),
+            "parent_spec_id": str(row.get("parentSpecId", "")),
+            "name": str(row.get("name", "")),
+            "required": bool(row.get("required", False)),
+            "is_sale": bool(row.get("isSale", False)),
+            "main_sale": bool(row.get("mainSale", False)),
+            "control_type": int(row.get("controlType", 0) or 0),
+            "choose_max_num": int(row.get("chooseMaxNum", 0) or 0),
+            "show_type": int(row.get("showType", 0) or 0),
+            "parent_template_pid": str(row.get("parentTemplatePid", "")),
+            "show_condition": show_condition,
+            "parent_value_rules": parent_values,
+            "value_units": units,
+            "min_value": str(row.get("minValue", "")),
+            "max_value": str(row.get("maxValue", "")),
+            "values": values,
+        }
+
+    def category_template(self, category_id: int) -> dict[str, object]:
+        result = self._result(
+            self.request("bg.local.goods.template.get", {"catId": category_id})
+        )
+        template = result.get("templateInfo")
+        if not isinstance(template, dict):
+            template = {}
+        sales = [
+            property_data
+            for row in template.get("goodsSpecProperties") or []
+            if (property_data := self._property(row)) is not None
+        ]
+        properties = [
+            property_data
+            for row in template.get("goodsProperties") or []
+            if (property_data := self._property(row)) is not None
+        ]
+        return {
+            "category_id": str(category_id),
+            "input_max_spec_num": int(result.get("inputMaxSpecNum", 0) or 0),
+            "single_spec_value_num": int(result.get("singleSpecValueNum", 0) or 0),
+            "sales_properties": sales,
+            "properties": properties,
+        }
 
     def check_connection(self) -> dict[str, object]:
         result = self.request("bg.open.accesstoken.info.get")
