@@ -1,13 +1,16 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const titles = {dashboard:['Műveleti központ','Áttekintés'],products:['Kínálat','Termékek'],orders:['Értékesítés','Rendelések'],import:['Kínálat','Importálás'],integrations:['Rendszer','Kapcsolatok'],settings:['Rendszer','Beállítások']};
+const titles = {dashboard:['Műveleti központ','Áttekintés'],products:['Kínálat','Termékek'],upload:['Allegro','Tesztfeltöltés'],orders:['Értékesítés','Rendelések'],import:['Kínálat','Importálás'],integrations:['Rendszer','Kapcsolatok'],settings:['Rendszer','Beállítások']};
 let currentImportId = null;
 let deviceTimer = null;
+let selectedCategory = null;
+let uploadProducts = [];
+let uploadMarketplace = null;
 
 async function api(path, options={}) {
   const response = await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
   const data = await response.json().catch(()=>({error:'Érvénytelen szerverválasz.'}));
-  if(!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if(!response.ok){const error=new Error(data.error || `HTTP ${response.status}`);error.details=data.details;throw error}
   return data;
 }
 function icon(id){return `<svg><use href="#${id}"/></svg>`}
@@ -23,6 +26,7 @@ function navigate(view){
   $('#eyebrow').textContent=titles[view][0]; $('#pageTitle').textContent=titles[view][1];
   history.replaceState(null,'',`#${view}`); $('#sidebar').classList.remove('open');
   if(view==='dashboard') loadDashboard(); if(view==='products') loadProducts();
+  if(view==='upload') loadUpload();
   if(view==='settings') loadSettings(); if(view==='integrations') loadConnectionState();
 }
 
@@ -52,8 +56,61 @@ async function loadProducts(){
     const q=encodeURIComponent($('#productSearch').value.trim()); const data=await api(`/api/products?q=${q}`); const rows=data.products;
     $('#productResultCount').textContent=`${rows.length} találat`; $('#navProductCount').textContent=rows.length;
     $('#productEmpty').classList.toggle('hidden',rows.length>0);
-    $('#productRows').innerHTML=rows.map(row=>`<tr><td><div class="product-cell">${row.image_url?`<img class="product-thumb" src="${escapeHtml(row.image_url)}" alt="" loading="lazy">`:'<div class="product-thumb"></div>'}<div><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(row.name)}</small></div></div></td><td><strong>${escapeHtml(row.sku)}</strong><small>${escapeHtml(row.parent_sku)}</small></td><td>${escapeHtml(row.color)} · ${escapeHtml(row.size)}</td><td><strong>${formatNumber(Number(row.price_huf))} Ft</strong></td><td>${formatNumber(row.stock)}</td><td><span class="badge neutral">Piszkozat</span></td></tr>`).join('');
+    $('#productRows').innerHTML=rows.map(row=>`<tr><td><div class="product-cell">${row.image_url?`<img class="product-thumb" src="${escapeHtml(row.image_url)}" alt="" loading="lazy">`:'<div class="product-thumb"></div>'}<div><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(row.name)}</small></div></div></td><td><strong>${escapeHtml(row.sku)}</strong><small>${escapeHtml(row.parent_sku)}</small></td><td>${escapeHtml(row.color)} · ${escapeHtml(row.size)}</td><td><strong>${formatNumber(Number(row.price_huf))} Ft</strong></td><td>${formatNumber(row.stock)}</td><td><span class="badge ${row.status==='inactive'?'good':'neutral'}">${row.status==='inactive'?'Inaktív az Allegrón':'Piszkozat'}</span>${row.allegro_offer_id?`<small>${escapeHtml(row.allegro_offer_id)}</small>`:''}</td></tr>`).join('');
   }catch(error){toast(error.message,'error')}
+}
+
+function categoryTrail(item){const names=[];let current=item;while(current){if(current.name)names.unshift(current.name);current=current.parent}return names.join(' / ')}
+async function loadUpload(){
+  try{
+    const [products,settings]=await Promise.all([api('/api/products'),api('/api/settings')]);uploadProducts=products.products;
+    const select=$('#offerProduct');const previous=select.value;select.innerHTML='<option value="">Válassz importált terméket…</option>'+uploadProducts.map(p=>`<option value="${p.id}">${escapeHtml(p.title)} · ${escapeHtml(p.sku)}</option>`).join('');if(previous)select.value=previous;
+    $('#uploadEnvironment').textContent=settings.environment==='production'?'ÉLES':'SANDBOX';$('#uploadEnvironment').classList.toggle('production',settings.environment==='production');
+    if(!uploadProducts.length)toast('Előbb importálj legalább egy megfelelő terméket.','error');
+    try{
+      const data=await api('/api/marketplace');uploadMarketplace=data.marketplace;
+      $('#marketplaceId').textContent=uploadMarketplace.id;$('#marketplaceCurrency').textContent=uploadMarketplace.currency;
+      syncOfferPrice();
+    }catch(error){uploadMarketplace=null;$('#marketplaceId').textContent='Eladói fiók szükséges';$('#marketplaceCurrency').textContent='—';toast(error.message,'error')}
+  }catch(error){toast(error.message,'error')}
+}
+function syncOfferPrice(){
+  const product=uploadProducts.find(item=>String(item.id)===$('#offerProduct').value);
+  if(uploadMarketplace?.currency==='HUF'&&product)$('#offerPrice').value=product.price_huf||'';
+  else if(!product)$('#offerPrice').value='';
+}
+async function searchCategories(){
+  const phrase=$('#categoryPhrase').value.trim();const button=$('#searchCategories');button.textContent='Keresés…';
+  try{const data=await api(`/api/categories/suggest?q=${encodeURIComponent(phrase)}`);$('#categoryResults').innerHTML=data.categories.length?data.categories.map(c=>`<div class="category-result"><div><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(categoryTrail(c))}</small></div><button class="secondary" data-category-id="${escapeHtml(c.id)}">Ellenőrzés</button></div>`).join(''):'<div class="wizard-empty">Nincs találat. Próbálj pontosabb terméknevet.</div>'}catch(error){toast(error.message,'error')}finally{button.textContent='Kategóriák keresése'}
+}
+async function inspectCategory(categoryId){
+  try{
+    const productId=$('#offerProduct').value;const suffix=productId?`?product_id=${encodeURIComponent(productId)}`:'';const data=await api(`/api/categories/${encodeURIComponent(categoryId)}${suffix}`);selectedCategory=data.category;renderCategory(data.category);$('#categoryInspector').classList.remove('hidden');$('#offerPreviewCard').classList.remove('hidden');$('#categoryInspector').scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(error){toast(error.message,'error')}
+}
+function renderCategory(category){
+  $('#selectedCategoryName').textContent=category.name;$('#selectedCategoryPath').textContent=category.path.map(p=>p.name).join(' / ');
+  const verdict=$('#categoryVerdict');verdict.textContent=category.can_create_without_gtin?'EAN nélkül használható':category.gtin_required?'GTIN kötelező':'Korlátozott';verdict.className=`badge ${category.can_create_without_gtin?'good':category.gtin_required?'bad':'neutral'}`;
+  const facts=[['Levélkategória',category.leaf],['Saját termék',category.product_creation_enabled],['Termékajánlat',category.offer_creation_enabled],['GTIN nem kötelező',!category.gtin_required]];
+  $('#verdictGrid').innerHTML=facts.map(([label,ok])=>`<div class="verdict-item ${ok?'ok':'bad'}"><span>${icon(ok?'i-check':'i-alert')}</span><div><strong>${escapeHtml(label)}</strong><small>${ok?'Rendben':'Nem teljesül'}</small></div></div>`).join('');
+  const required=category.parameters.filter(p=>p.required||p.required_for_product);$('#parameterFields').innerHTML=required.length?required.map(parameterField).join(''):'<div class="wizard-empty">Ebben a kategóriában nincs további kötelező paraméter.</div>';
+}
+function parameterField(parameter){
+  const meta=`${parameter.required_for_product?'Termékadat':'Ajánlatadat'}${parameter.unit?` · ${parameter.unit}`:''}`;let control;
+  if(parameter.type==='dictionary')control=`<select data-parameter="${escapeHtml(parameter.id)}"><option value="">Válassz…</option>${parameter.dictionary.map(v=>`<option value="${escapeHtml(v.id)}" ${String(v.id)===String(parameter.suggested_value)?'selected':''}>${escapeHtml(v.value)}</option>`).join('')}</select>`;
+  else control=`<input data-parameter="${escapeHtml(parameter.id)}" value="${escapeHtml(parameter.suggested_value||'')}" placeholder="Add meg az értéket">`;
+  return `<label class="parameter-field ${parameter.is_gtin?'gtin-field':''}"><span>${escapeHtml(parameter.name)} <b>*</b></span>${control}<small>${escapeHtml(meta)} · ID ${escapeHtml(parameter.id)}</small></label>`;
+}
+function offerRequest(){const parameters={};$$('[data-parameter]',$('#parameterFields')).forEach(field=>{if(field.value)parameters[field.dataset.parameter]=field.value});return{product_id:Number($('#offerProduct').value||0),category_id:selectedCategory?.id||'',price_amount:$('#offerPrice').value.trim(),parameters}}
+async function previewOffer(){
+  if(!selectedCategory){toast('Előbb válassz és ellenőrizz egy kategóriát.','error');return}if(!$('#offerProduct').value){toast('Válassz egy importált terméket.','error');return}
+  try{const data=await api('/api/offers/preview',{method:'POST',body:JSON.stringify(offerRequest())});uploadMarketplace=data.marketplace;$('#marketplaceId').textContent=data.marketplace.id;$('#marketplaceCurrency').textContent=data.marketplace.currency;$('#offerPayload').textContent=JSON.stringify(data.payload,null,2);$('#payloadWrap').classList.remove('hidden');toast('A feltöltési payload elkészült.','success')}catch(error){toast(error.message,'error')}
+}
+async function createOffer(){
+  if(!selectedCategory){toast('Előbb válassz kategóriát.','error');return}const request={...offerRequest(),confirmation:$('#uploadConfirmation').value};
+  if($('#uploadEnvironment').classList.contains('production')&&!confirm('Ez az ÉLES Allegro-fiókban hoz létre egy INAKTÍV ajánlatot. Folytatod?'))return;
+  const button=$('#createOffer');button.textContent='Feltöltés folyamatban…';
+  try{const data=await api('/api/offers/create',{method:'POST',body:JSON.stringify(request)});const result=$('#offerResult');result.classList.remove('hidden');result.innerHTML=`${icon('i-check')}<div><strong>Az inaktív ajánlat létrejött.</strong><span>Ajánlatazonosító: ${escapeHtml(data.offer_id||'feldolgozás alatt')} · HTTP ${data.status}</span></div>`;toast('Az Allegro tesztajánlat létrejött.','success');loadProducts();loadDashboard()}catch(error){toast(error.message,'error')}finally{button.innerHTML=`${icon('i-upload')}Inaktív tesztajánlat létrehozása`}
 }
 
 async function previewFile(file){
@@ -89,7 +146,7 @@ async function startLogin(){
 }
 async function pollLogin(code){try{const data=await api('/api/auth/device/poll',{method:'POST',body:JSON.stringify({device_code:code})});if(data.status==='authorized'){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent='Sikeresen csatlakoztatva.';toast('Az eladói fiók csatlakoztatva.','success');loadConnectionState();loadDashboard()}}catch(error){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent=error.message;toast(error.message,'error')}}
 
-document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view)});
+document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category)inspectCategory(category.dataset.categoryId)});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 $('#refreshDashboard').addEventListener('click',loadDashboard);
@@ -98,4 +155,5 @@ $('#csvFile').addEventListener('change',event=>previewFile(event.target.files[0]
 const dz=$('#dropzone');['dragenter','dragover'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',event=>previewFile(event.dataTransfer.files[0]));
 $('#useSample').addEventListener('click',async()=>{try{const response=await fetch('/sample.csv');if(!response.ok)throw new Error('A mintafájl nem érhető el.');const blob=await response.blob();previewFile(new File([blob],'export-minta.csv',{type:'text/csv'}))}catch(error){toast(error.message,'error')}});
 $('#commitImport').addEventListener('click',commitImport);$('#settingsForm').addEventListener('submit',saveSettings);$('#checkConnection').addEventListener('click',checkConnection);$('#startLogin').addEventListener('click',startLogin);
+$('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id)});$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
 navigate(location.hash.slice(1)||'dashboard');

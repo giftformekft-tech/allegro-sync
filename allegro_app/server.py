@@ -11,10 +11,11 @@ import urllib.parse
 import webbrowser
 
 from . import __version__
-from .allegro import AllegroAuth, AllegroError
+from .allegro import AllegroApiError, AllegroAuth, AllegroCatalog, AllegroClient, AllegroError
 from .config import AppConfig
 from .database import Database
 from .importer import parse_csv
+from .offers import OfferService, suggested_parameter_value
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +37,18 @@ class Application:
     @property
     def auth(self) -> AllegroAuth:
         return AllegroAuth(self.config, self.database)
+
+    @property
+    def client(self) -> AllegroClient:
+        return AllegroClient(self.config, self.database)
+
+    @property
+    def catalog(self) -> AllegroCatalog:
+        return AllegroCatalog(self.client)
+
+    @property
+    def offers(self) -> OfferService:
+        return OfferService(self.config, self.database, self.client)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -88,14 +101,33 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/products":
                 query = urllib.parse.parse_qs(parsed.query)
                 self._json({"products": self.app.database.list_products(query.get("q", [""])[0])})
+            elif parsed.path == "/api/categories/suggest":
+                query = urllib.parse.parse_qs(parsed.query)
+                self._json({"categories": self.app.catalog.suggest(query.get("q", [""])[0])})
+            elif parsed.path.startswith("/api/categories/"):
+                category_id = urllib.parse.unquote(parsed.path.removeprefix("/api/categories/"))
+                category = self.app.catalog.inspect(category_id)
+                query = urllib.parse.parse_qs(parsed.query)
+                product_id = int(query.get("product_id", ["0"])[0] or 0)
+                if product_id:
+                    product = self.app.database.get_product(product_id)
+                    for parameter in category["parameters"]:
+                        parameter["suggested_value"] = suggested_parameter_value(parameter, product)
+                self._json({"category": category})
             elif parsed.path == "/api/settings":
                 self._json(self.app.config.public_values())
+            elif parsed.path == "/api/marketplace":
+                self._json({"marketplace": self.app.offers.marketplace()})
             elif parsed.path.startswith("/api/"):
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
             else:
                 self._static(parsed.path)
-        except Exception as exc:
+        except AllegroApiError as exc:
+            self._json({"error": str(exc), "details": exc.details}, exc.status)
+        except (ValueError, AllegroError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def do_POST(self) -> None:
         try:
@@ -125,8 +157,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.app.auth.start_device_flow())
             elif self.path == "/api/auth/device/poll":
                 self._json(self.app.auth.poll_device_flow(str(body.get("device_code", ""))))
+            elif self.path == "/api/offers/preview":
+                category = self.app.catalog.inspect(str(body.get("category_id", "")))
+                selections = body.get("parameters") if isinstance(body.get("parameters"), dict) else {}
+                preview = self.app.offers.preview(
+                    int(body.get("product_id", 0)), category, selections, str(body.get("price_amount", ""))
+                )
+                self._json({**preview, "environment": self.app.config.environment})
+            elif self.path == "/api/offers/create":
+                category = self.app.catalog.inspect(str(body.get("category_id", "")))
+                selections = body.get("parameters") if isinstance(body.get("parameters"), dict) else {}
+                result = self.app.offers.create(
+                    int(body.get("product_id", 0)), category, selections,
+                    str(body.get("confirmation", "")), str(body.get("price_amount", ""))
+                )
+                self._json(result)
             else:
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
+        except AllegroApiError as exc:
+            self._json({"error": str(exc), "details": exc.details}, exc.status)
         except (ValueError, AllegroError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:

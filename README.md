@@ -6,8 +6,9 @@ rendelésszinkron és szamlazz.hu számlázás.
 
 > **Státusz: működő első alkalmazásverzió.** A kattintásos Python-felület,
 > a CSV-előnézet és -validálás, a helyi SQLite állapottár, a terméklista,
-> a beállításkezelés és az Allegro OAuth-kapcsolat ellenőrzése elkészült.
-> A tényleges ajánlatfeltöltés, rendelés- és számlaszinkron következő ütem.
+> az Allegro OAuth, az élő kategória/GTIN-felderítés és az egytermékes inaktív
+> tesztajánlat létrehozása elkészült. A tömeges feltöltés, rendelés- és
+> számlaszinkron következő ütem.
 
 ## Gyors indítás
 
@@ -26,6 +27,10 @@ indítás után:
 2. **Kapcsolatok:** teszteld az alkalmazást, majd csatlakoztasd az eladói fiókot.
 3. **Importálás:** húzd be az Allegro CSV-t, ellenőrizd a hibákat, majd mentsd
    a megfelelő sorokat.
+4. **Tesztfeltöltés:** keress kategóriát, ellenőrizd a GTIN-verdiktet, töltsd
+   ki a kötelező Allegro-paramétereket, majd készíts egy inaktív ajánlatot.
+   A program a csatlakoztatott eladói fiókból olvassa ki az alappiacot és
+   annak pénznemét; nem HUF-os fióknál külön tesztárat kér.
 
 Automata tesztek:
 
@@ -83,9 +88,10 @@ szín- és méretskála szűkítése kapacitáskérdés, nem ízlés.
 
 ## Következő fejlesztési lépés
 
-A kezelőfelület következő modulja a **kategória-felderítő**: a célkategóriákra
-megmutatja, hogy a GTIN kötelező-e és javasolható-e saját termék. Ezt sandbox
-fiókkal le kell futtatni a tényleges ajánlatfeltöltő bekapcsolása előtt.
+A kategória-felderítő és az egytermékes, inaktív tesztfeltöltés elkészült.
+A következő modul a tömeges feltöltés, majd az ár- és készletszinkron.
+A felület nem tiltja le az éles környezetet, de az első kategória- és
+GTIN-próbát érdemes sandbox fiókkal elvégezni.
 
 Tesztelés lépésről lépésre: [`docs/teszteles.md`](docs/teszteles.md)
 

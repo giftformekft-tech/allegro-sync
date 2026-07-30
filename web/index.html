@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#111214">
   <title>Allegro Sync</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/upload.css">
 </head>
 <body>
   <svg aria-hidden="true" class="svg-defs">
@@ -13,6 +14,7 @@
     <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7 8 4 8-4v10l-8 4-8-4V7Z"/><path d="M12 11v10"/></symbol>
     <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 3h2l2.4 11.3a2 2 0 0 0 2 1.7h7.7a2 2 0 0 0 2-1.6L21 7H6"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="M7 12h10"/><path d="m14 9 3 3-3 3"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
@@ -28,6 +30,7 @@
       <nav aria-label="Fő navigáció">
         <button class="nav-item active" data-view="dashboard"><svg><use href="#i-grid"/></svg><span>Áttekintés</span></button>
         <button class="nav-item" data-view="products"><svg><use href="#i-box"/></svg><span>Termékek</span><b id="navProductCount">0</b></button>
+        <button class="nav-item" data-view="upload"><svg><use href="#i-scan"/></svg><span>Tesztfeltöltés</span></button>
         <button class="nav-item" data-view="orders"><svg><use href="#i-cart"/></svg><span>Rendelések</span></button>
         <button class="nav-item" data-view="import"><svg><use href="#i-upload"/></svg><span>Importálás</span></button>
         <div class="nav-label">Rendszer</div>
@@ -67,6 +70,31 @@
       <section class="view" id="view-products">
         <div class="section-actions"><label class="search"><svg><use href="#i-search"/></svg><input id="productSearch" placeholder="Keresés név vagy SKU alapján…"></label><button class="primary" data-go="import"><svg><use href="#i-upload"/></svg>Új import</button></div>
         <article class="card table-card"><div class="table-head"><div><span class="kicker">KÍNÁLAT</span><h3>Termékváltozatok</h3></div><span class="muted" id="productResultCount">0 találat</span></div><div class="table-wrap"><table><thead><tr><th>Termék</th><th>SKU</th><th>Variáns</th><th>Ár</th><th>Készlet</th><th>Állapot</th></tr></thead><tbody id="productRows"></tbody></table><div class="empty-table" id="productEmpty"><div class="empty-icon"><svg><use href="#i-box"/></svg></div><h3>Még nincs importált termék</h3><p>Húzd be a forme.hu exportját az Importálás oldalon.</p><button class="secondary" data-go="import">Import indítása</button></div></div></article>
+      </section>
+
+      <section class="view" id="view-upload">
+        <div class="upload-wizard">
+          <article class="card panel wizard-card">
+            <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">KATEGÓRIA</span><h2>Pólókategória felderítése</h2><p class="muted">Az Allegro élő adataiból ellenőrizzük a GTIN-t és a kötelező paramétereket.</p></div></div>
+            <div class="inline-form"><label class="search"><svg><use href="#i-search"/></svg><input id="categoryPhrase" value="pamut póló" placeholder="pl. pamut póló"></label><button class="primary" id="searchCategories">Kategóriák keresése</button></div>
+            <div class="category-results" id="categoryResults"><div class="wizard-empty">Keress rá a termékre az Allegro kategóriái között.</div></div>
+          </article>
+
+          <article class="card panel wizard-card hidden" id="categoryInspector">
+            <div class="wizard-heading"><span class="step-number">2</span><div><span class="kicker">ELLENŐRZÉS</span><h2 id="selectedCategoryName">Kategória</h2><p class="category-path" id="selectedCategoryPath"></p></div><span class="badge neutral" id="categoryVerdict">Ellenőrzés</span></div>
+            <div class="verdict-grid" id="verdictGrid"></div>
+            <div class="parameter-head"><div><h3>Kötelező termékadatok</h3><p class="muted">A szótáras mezőknél az Allegro által engedélyezett értéket válaszd.</p></div><select id="offerProduct"><option value="">Válassz importált terméket…</option></select></div>
+            <div class="parameter-grid" id="parameterFields"></div>
+          </article>
+
+          <article class="card panel wizard-card hidden" id="offerPreviewCard">
+            <div class="wizard-heading"><span class="step-number">3</span><div><span class="kicker">TESZTAJÁNLAT</span><h2>Payload ellenőrzése és feltöltés</h2><p class="muted">Az ajánlat mindig INACTIVE piszkozatként jön létre; külön aktiválás nem történik.</p></div><span class="environment-chip" id="uploadEnvironment">SANDBOX</span></div>
+            <div class="market-row"><div><span>Alappiac</span><strong id="marketplaceId">Betöltés…</strong></div><label><span>Tesztár (<b id="marketplaceCurrency">HUF</b>)</span><input id="offerPrice" inputmode="decimal" placeholder="A termék importált ára"></label><button class="secondary" id="previewOffer">JSON előnézet készítése</button></div>
+            <div class="payload-wrap hidden" id="payloadWrap"><div class="payload-head"><strong>POST /sale/product-offers</strong><span>application/vnd.allegro.public.v1+json</span></div><pre id="offerPayload"></pre></div>
+            <div class="upload-confirm"><label><span>Megerősítés</span><input id="uploadConfirmation" placeholder="Írd be: FELTÖLTÉS" autocomplete="off"><small>Éles és sandbox környezetben is szükséges.</small></label><button class="primary danger-action" id="createOffer"><svg><use href="#i-upload"/></svg>Inaktív tesztajánlat létrehozása</button></div>
+            <div class="offer-result hidden" id="offerResult"></div>
+          </article>
+        </div>
       </section>
 
       <section class="view" id="view-orders">

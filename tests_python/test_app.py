@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import tempfile
 import threading
 import unittest
@@ -10,6 +11,7 @@ from urllib.request import Request, urlopen
 from allegro_app.config import AppConfig
 from allegro_app.database import Database
 from allegro_app.importer import build_title, parse_csv
+from allegro_app.offers import OfferService, build_offer_payload, serialize_parameter, suggested_parameter_value
 from allegro_app.server import Application, AppServer
 
 
@@ -58,6 +60,146 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(1, db.commit_import(import_id))
             self.assertEqual(1, db.commit_import(import_id))
             self.assertEqual(1, len(db.list_products()))
+
+
+class OfferPayloadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.product = {
+            "id": 1,
+            "sku": "CICA-POLO-FEKETE-M",
+            "title": "Vicces macskás minta Póló Fekete M",
+            "description": "<p>Prémium pamut póló.</p>",
+            "brand": "forme",
+            "material": "100% pamut",
+            "color": "Fekete",
+            "size": "M",
+            "price_huf": "5990",
+            "stock": 25,
+            "image_url": "https://example.com/polo.webp",
+        }
+        self.category = {
+            "id": "123",
+            "leaf": True,
+            "product_creation_enabled": True,
+            "offer_creation_enabled": True,
+            "gtin_required": False,
+            "parameters": [
+                {
+                    "id": "brand",
+                    "name": "Marka",
+                    "type": "dictionary",
+                    "required": True,
+                    "required_for_product": True,
+                    "describes_product": True,
+                    "is_gtin": False,
+                    "dictionary": [{"id": "brand_forme", "value": "forme"}],
+                },
+                {
+                    "id": "condition",
+                    "name": "Állapot",
+                    "type": "dictionary",
+                    "required": True,
+                    "required_for_product": False,
+                    "describes_product": False,
+                    "is_gtin": False,
+                    "dictionary": [{"id": "new", "value": "Új"}],
+                },
+            ],
+        }
+
+    def test_builds_inactive_huf_offer(self) -> None:
+        payload = build_offer_payload(
+            self.product, self.category, {"brand": "brand_forme", "condition": "new"}
+        )
+        self.assertEqual("INACTIVE", payload["publication"]["status"])
+        self.assertEqual("HUF", payload["sellingMode"]["price"]["currency"])
+        self.assertEqual("CICA-POLO-FEKETE-M", payload["external"]["id"])
+        self.assertEqual([{"id": "brand", "valuesIds": ["brand_forme"]}], payload["productSet"][0]["product"]["parameters"])
+        self.assertEqual([{"id": "condition", "valuesIds": ["new"]}], payload["parameters"])
+
+    def test_missing_required_parameter_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Hiányzó kötelező"):
+            build_offer_payload(self.product, self.category, {"brand": "brand_forme"})
+
+    def test_gtin_category_is_rejected_without_gtin(self) -> None:
+        self.category["gtin_required"] = True
+        with self.assertRaisesRegex(ValueError, "GTIN"):
+            build_offer_payload(self.product, self.category, {"brand": "brand_forme", "condition": "new"})
+
+    def test_dictionary_suggestion_matches_imported_value(self) -> None:
+        parameter = self.category["parameters"][0]
+        self.assertEqual("brand_forme", suggested_parameter_value(parameter, self.product))
+
+    def test_parameter_serialization(self) -> None:
+        self.assertEqual(
+            {"id": "brand", "valuesIds": ["brand_forme"]},
+            serialize_parameter(self.category["parameters"][0], "brand_forme"),
+        )
+
+    def test_uses_marketplace_currency_language_and_manual_price(self) -> None:
+        payload = build_offer_payload(
+            self.product,
+            self.category,
+            {"brand": "brand_forme", "condition": "new"},
+            currency="PLN",
+            language="pl-PL",
+            price_amount="59,90",
+        )
+        self.assertEqual({"amount": "59.90", "currency": "PLN"}, payload["sellingMode"]["price"])
+        self.assertEqual("pl-PL", payload["language"])
+
+    def test_invalid_price_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "nem érvényes"):
+            build_offer_payload(
+                self.product,
+                self.category,
+                {"brand": "brand_forme", "condition": "new"},
+                price_amount="nem-ár",
+            )
+
+
+class MarketplaceTests(unittest.TestCase):
+    class Client:
+        def request(self, method: str, path: str, **_: object) -> dict:
+            if path == "/me":
+                return {"body": {"baseMarketplace": {"id": "allegro-hu"}}}
+            return {
+                "body": {
+                    "marketplaces": [{
+                        "id": "allegro-hu",
+                        "currencies": {"base": {"code": "HUF"}},
+                        "languages": {"offerCreation": [{"code": "hu-HU"}, {"code": "en-US"}]},
+                    }]
+                }
+            }
+
+    def test_reads_base_marketplace_currency_and_language(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = AppConfig(root, {"ALLEGRO_LANGUAGE": "hu-HU"})
+            service = OfferService(config, Database(root / "state.sqlite"), self.Client())
+            self.assertEqual(
+                {"id": "allegro-hu", "currency": "HUF", "language": "hu-HU", "languages": ["hu-HU", "en-US"]},
+                service.marketplace(),
+            )
+
+
+class WebAssetTests(unittest.TestCase):
+    def test_javascript_element_ids_exist_and_are_unique(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        html = (root / "web" / "index.html").read_text(encoding="utf-8")
+        javascript = (root / "web" / "app.js").read_text(encoding="utf-8")
+        html_ids = re.findall(r'\bid="([^"]+)"', html)
+        referenced_ids = set(re.findall(r"\$\('#([^']+)'\)", javascript))
+        self.assertEqual(len(html_ids), len(set(html_ids)))
+        self.assertEqual(set(), referenced_ids - set(html_ids))
+
+    def test_test_upload_button_is_not_disabled(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        html = (root / "web" / "index.html").read_text(encoding="utf-8")
+        button = re.search(r'<button[^>]+id="createOffer"[^>]*>', html)
+        self.assertIsNotNone(button)
+        self.assertNotIn("disabled", button.group(0))
 
 
 class ConfigTests(unittest.TestCase):

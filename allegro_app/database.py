@@ -49,7 +49,13 @@ class Database:
                     price_huf TEXT NOT NULL,
                     stock INTEGER NOT NULL,
                     image_url TEXT,
+                    description TEXT NOT NULL DEFAULT '',
+                    brand TEXT NOT NULL DEFAULT '',
+                    material TEXT NOT NULL DEFAULT '',
+                    ai_content INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'draft',
+                    category_id TEXT,
+                    allegro_offer_id TEXT,
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS import_batches (
@@ -85,6 +91,21 @@ class Database:
                 );
                 """
             )
+            self._ensure_columns(db, "products", {
+                "description": "TEXT NOT NULL DEFAULT ''",
+                "brand": "TEXT NOT NULL DEFAULT ''",
+                "material": "TEXT NOT NULL DEFAULT ''",
+                "ai_content": "INTEGER NOT NULL DEFAULT 0",
+                "category_id": "TEXT",
+                "allegro_offer_id": "TEXT",
+            })
+
+    @staticmethod
+    def _ensure_columns(db: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+        existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, definition in columns.items():
+            if name not in existing:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
     def add_activity(self, kind: str, message: str) -> None:
         with self.connect() as db:
@@ -156,17 +177,21 @@ class Database:
                 row = json.loads(record["payload"])
                 db.execute(
                     """INSERT INTO products
-                    (sku, parent_sku, name, title, type, color, size, price_huf, stock, image_url, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                    (sku, parent_sku, name, title, type, color, size, price_huf, stock, image_url,
+                     description, brand, material, ai_content, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
                     ON CONFLICT(sku) DO UPDATE SET
                       parent_sku=excluded.parent_sku, name=excluded.name, title=excluded.title,
                       type=excluded.type, color=excluded.color, size=excluded.size,
                       price_huf=excluded.price_huf, stock=excluded.stock,
-                      image_url=excluded.image_url, updated_at=excluded.updated_at""",
+                      image_url=excluded.image_url, description=excluded.description,
+                      brand=excluded.brand, material=excluded.material, ai_content=excluded.ai_content,
+                      updated_at=excluded.updated_at""",
                     (
                         row["sku"], row["parent_sku"], row["name"], row["title"], row["type"],
                         row["color"], row["size"], row["price_huf"], row["stock"],
-                        row["image_url"], now_iso(),
+                        row["image_url"], row.get("description", ""), row.get("brand", ""),
+                        row.get("material", ""), 1 if row.get("ai_content") else 0, now_iso(),
                     ),
                 )
             db.execute("UPDATE import_batches SET status = 'committed' WHERE id = ?", (import_id,))
@@ -187,6 +212,23 @@ class Database:
                 rows = db.execute("SELECT * FROM products ORDER BY updated_at DESC LIMIT 250").fetchall()
         return [dict(row) for row in rows]
 
+    def get_product(self, product_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        if row is None:
+            raise ValueError("A kiválasztott termék nem található.")
+        return dict(row)
+
+    def mark_offer_created(self, product_id: int, category_id: str, offer_id: str | None) -> None:
+        with self.connect() as db:
+            db.execute(
+                """UPDATE products SET status = 'inactive', category_id = ?, allegro_offer_id = ?,
+                updated_at = ? WHERE id = ?""",
+                (category_id, offer_id, now_iso(), product_id),
+            )
+        label = offer_id or "feldolgozás alatt"
+        self.add_activity("upload", f"Inaktív Allegro tesztajánlat létrehozva: {label}")
+
     def save_token(self, token_type: str, access: str, refresh: str | None, expires_at: str, scope: str | None) -> None:
         with self.connect() as db:
             db.execute(
@@ -196,6 +238,11 @@ class Database:
                 refresh_token=excluded.refresh_token, expires_at=excluded.expires_at, scope=excluded.scope""",
                 (token_type, access, refresh, expires_at, scope),
             )
+
+    def get_token(self, token_type: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM oauth_tokens WHERE token_type = ?", (token_type,)).fetchone()
+        return dict(row) if row else None
 
     def has_user_token(self) -> bool:
         with self.connect() as db:
