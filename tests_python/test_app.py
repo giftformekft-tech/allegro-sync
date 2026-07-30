@@ -7,10 +7,12 @@ import tempfile
 import threading
 import unittest
 from urllib.request import Request, urlopen
+import xml.etree.ElementTree as ET
 
 from allegro_app.config import AppConfig
 from allegro_app.database import Database
 from allegro_app.importer import build_title, parse_csv
+from allegro_app.invoices import InvoiceError, InvoiceService, build_invoice_xml
 from allegro_app.offers import (
     OfferService,
     build_offer_payload,
@@ -26,6 +28,40 @@ SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf
 TEST-POLO-S;TEST;Vidám nyári minta;<p>Pamut póló.</p>;polo;Póló;Fekete;S;5990;20;https://example.com/a.webp
 HIBAS;TEST;A;;polo;Póló;Kék;M;0;0;rossz-url
 """
+
+
+def sample_order() -> dict:
+    return {
+        "id": "ffc396b0-9584-11e8-8d53-07c966f77738",
+        "status": "READY_FOR_PROCESSING",
+        "updatedAt": "2026-07-30T10:00:00Z",
+        "buyer": {
+            "email": "buyer+order@allegromail.com",
+            "firstName": "Minta",
+            "lastName": "Vevő",
+            "login": "mintavevo",
+        },
+        "payment": {"type": "ONLINE", "finishedAt": "2026-07-30T09:59:00Z"},
+        "invoice": {
+            "required": True,
+            "address": {
+                "street": "Fő utca 1.", "city": "Budapest", "zipCode": "1011", "countryCode": "HU",
+                "company": {"name": "Minta Kft.", "taxId": "12345678-2-41"},
+            },
+        },
+        "delivery": {
+            "address": {
+                "firstName": "Minta", "lastName": "Vevő", "street": "Fő utca 1.",
+                "city": "Budapest", "zipCode": "1011", "countryCode": "HU",
+            },
+            "cost": {"amount": "990.00", "currency": "HUF"},
+        },
+        "lineItems": [{
+            "offer": {"name": "Pamut póló"}, "quantity": 2,
+            "price": {"amount": "5000.00", "currency": "HUF"},
+        }],
+        "summary": {"totalToPay": {"amount": "10990.00", "currency": "HUF"}},
+    }
 
 
 class TitleBuilderTests(unittest.TestCase):
@@ -331,6 +367,113 @@ class MarketplaceTests(unittest.TestCase):
             self.assertEqual("futár", options["shipping_rates"][0]["name"])
             self.assertEqual("Forme", options["responsible_producers"][0]["name"])
             service._validate_account_choices("allegro-hu", "rate-1", "producer-1", "")
+
+
+class InvoiceTests(unittest.TestCase):
+    def test_invoice_xml_uses_masked_email_and_fallback_flag(self) -> None:
+        xml = build_invoice_xml(sample_order(), "agent-key", "ALLEGRO", True)
+        root = ET.fromstring(xml)
+        namespace = {"s": "http://www.szamlazz.hu/xmlszamla"}
+        self.assertEqual(
+            "buyer+order@allegromail.com", root.findtext("s:vevo/s:email", namespaces=namespace)
+        )
+        self.assertEqual("true", root.findtext("s:vevo/s:sendEmail", namespaces=namespace))
+        self.assertEqual("Minta Kft.", root.findtext("s:vevo/s:nev", namespaces=namespace))
+        self.assertEqual("12345678-2-41", root.findtext("s:vevo/s:adoszam", namespaces=namespace))
+        self.assertEqual("ALLEGRO", root.findtext("s:fejlec/s:szamlaszamElotag", namespaces=namespace))
+        self.assertEqual(2, len(root.findall("s:tetelek/s:tetel", namespaces=namespace)))
+
+    def test_invoice_rejects_mismatching_order_total(self) -> None:
+        order = sample_order()
+        order["summary"]["totalToPay"]["amount"] = "9999.00"
+        with self.assertRaisesRegex(InvoiceError, "nem egyezik"):
+            build_invoice_xml(order, "agent-key")
+
+    def test_invoice_is_uploaded_to_allegro_and_not_duplicated(self) -> None:
+        class Allegro:
+            def __init__(self) -> None:
+                self.posts = 0
+                self.uploads = 0
+
+            def request(self, method: str, path: str, **_: object) -> dict:
+                if method == "GET":
+                    return {"body": sample_order()}
+                self.posts += 1
+                return {"body": {"id": "invoice-on-allegro"}}
+
+            def upload_pdf(self, path: str, content: bytes) -> dict:
+                self.uploads += 1
+                self.asserted_path = path
+                if not content.startswith(b"%PDF"):
+                    raise AssertionError("not a PDF")
+                return {"status": 200}
+
+        class Szamlazz:
+            calls = 0
+
+            def create_invoice(self, order: dict) -> tuple[str, bytes, str]:
+                self.calls += 1
+                return "ALLEGRO-2026-1", b"%PDF-test", order["buyer"]["email"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = AppConfig(root, {
+                "INVOICE_DRIVER": "szamlazz", "SZAMLAZZ_AGENT_KEY": "key",
+                "SZAMLAZZ_SEND_EMAIL": "true", "ALLEGRO_ENV": "sandbox",
+            })
+            database = Database(root / "state.sqlite")
+            allegro = Allegro()
+            service = InvoiceService(config, database, allegro)  # type: ignore[arg-type]
+            service.szamlazz = Szamlazz()  # type: ignore[assignment]
+            result = service.create_and_upload(sample_order()["id"])
+            self.assertEqual("ALLEGRO-2026-1", result["invoice_number"])
+            self.assertEqual(1, allegro.posts)
+            self.assertEqual(1, allegro.uploads)
+            self.assertEqual("uploaded", database.get_order_invoice(sample_order()["id"])["status"])
+            with self.assertRaisesRegex(InvoiceError, "már feltöltöttük"):
+                service.create_and_upload(sample_order()["id"])
+
+    def test_failed_allegro_upload_reuses_existing_pdf(self) -> None:
+        class Allegro:
+            fail = True
+            posts = 0
+
+            def request(self, method: str, path: str, **_: object) -> dict:
+                if method == "GET":
+                    return {"body": sample_order()}
+                self.posts += 1
+                return {"body": {"id": "invoice-on-allegro"}}
+
+            def upload_pdf(self, path: str, content: bytes) -> dict:
+                if self.fail:
+                    raise RuntimeError("temporary upload error")
+                return {"status": 200}
+
+        class Szamlazz:
+            calls = 0
+
+            def create_invoice(self, order: dict) -> tuple[str, bytes, str]:
+                self.calls += 1
+                return "ALLEGRO-2026-2", b"%PDF-test", order["buyer"]["email"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = InvoiceService(
+                AppConfig(root, {
+                    "INVOICE_DRIVER": "szamlazz", "SZAMLAZZ_AGENT_KEY": "key",
+                    "ALLEGRO_ENV": "sandbox",
+                }),
+                Database(root / "state.sqlite"),
+                Allegro(),  # type: ignore[arg-type]
+            )
+            fake = Szamlazz()
+            service.szamlazz = fake  # type: ignore[assignment]
+            with self.assertRaisesRegex(RuntimeError, "temporary"):
+                service.create_and_upload(sample_order()["id"])
+            service.allegro.fail = False  # type: ignore[attr-defined]
+            service.create_and_upload(sample_order()["id"])
+            self.assertEqual(1, fake.calls)
+            self.assertEqual(1, service.allegro.posts)  # type: ignore[attr-defined]
 
 
 class WebAssetTests(unittest.TestCase):

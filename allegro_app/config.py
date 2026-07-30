@@ -15,6 +15,7 @@ ENV_KEYS = (
     "INVOICE_DRIVER",
     "SZAMLAZZ_AGENT_KEY",
     "SZAMLAZZ_INVOICE_PREFIX",
+    "SZAMLAZZ_SEND_EMAIL",
 )
 
 
@@ -37,6 +38,7 @@ class AppConfig:
             "ALLEGRO_LANGUAGE": "hu-HU",
             "ALLEGRO_RATE_LIMIT_PER_MINUTE": "4000",
             "INVOICE_DRIVER": "none",
+            "SZAMLAZZ_SEND_EMAIL": "false",
         }
         source = root / ".env"
         if not source.exists():
@@ -82,6 +84,11 @@ class AppConfig:
             "invoice_driver": self.values.get("INVOICE_DRIVER", "none"),
             "szamlazz_agent_key_set": bool(self.values.get("SZAMLAZZ_AGENT_KEY", "")),
             "invoice_prefix": self.values.get("SZAMLAZZ_INVOICE_PREFIX", ""),
+            "invoice_email_fallback": self.values.get("SZAMLAZZ_SEND_EMAIL", "false").lower() == "true",
+            "invoice_ready": (
+                self.values.get("INVOICE_DRIVER") == "szamlazz"
+                and bool(self.values.get("SZAMLAZZ_AGENT_KEY", ""))
+            ),
         }
 
     def validation(self) -> list[str]:

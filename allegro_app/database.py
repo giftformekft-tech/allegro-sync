@@ -98,6 +98,18 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS order_invoices (
+                    order_id TEXT PRIMARY KEY,
+                    invoice_number TEXT,
+                    buyer_email TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    allegro_invoice_id TEXT,
+                    pdf_path TEXT,
+                    email_fallback INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_columns(db, "products", {
@@ -314,3 +326,55 @@ class Database:
     def has_user_token(self) -> bool:
         with self.connect() as db:
             return db.execute("SELECT 1 FROM oauth_tokens WHERE token_type = 'user'").fetchone() is not None
+
+    def get_order_invoice(self, order_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM order_invoices WHERE order_id = ?", (order_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_order_invoices(self) -> dict[str, dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM order_invoices").fetchall()
+        return {str(row["order_id"]): dict(row) for row in rows}
+
+    def save_order_invoice(
+        self,
+        order_id: str,
+        *,
+        status: str,
+        buyer_email: str = "",
+        invoice_number: str | None = None,
+        allegro_invoice_id: str | None = None,
+        pdf_path: str | None = None,
+        email_fallback: bool = False,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO order_invoices
+                (order_id, invoice_number, buyer_email, status, allegro_invoice_id, pdf_path,
+                 email_fallback, error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(order_id) DO UPDATE SET
+                  invoice_number=COALESCE(excluded.invoice_number, order_invoices.invoice_number),
+                  buyer_email=CASE WHEN excluded.buyer_email != '' THEN excluded.buyer_email ELSE order_invoices.buyer_email END,
+                  status=excluded.status,
+                  allegro_invoice_id=COALESCE(excluded.allegro_invoice_id, order_invoices.allegro_invoice_id),
+                  pdf_path=COALESCE(excluded.pdf_path, order_invoices.pdf_path),
+                  email_fallback=excluded.email_fallback,
+                  error=excluded.error,
+                  updated_at=excluded.updated_at""",
+                (
+                    order_id, invoice_number, buyer_email, status, allegro_invoice_id, pdf_path,
+                    1 if email_fallback else 0, error, timestamp, timestamp,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM order_invoices WHERE order_id = ?", (order_id,)
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("A számla állapotának mentése nem sikerült.")
+        return dict(row)

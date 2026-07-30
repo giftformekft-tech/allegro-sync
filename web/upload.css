@@ -677,3 +677,5 @@
     flex-direction: column;
   }
 }
+.invoice-flow{padding:25px 28px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:30px;background:linear-gradient(135deg,#202125,#2c2d31);color:#fff}.invoice-flow h2{margin:7px 0 8px;font-size:22px;letter-spacing:-.035em}.invoice-flow p{margin:0;max-width:700px;color:#b6b8be;font-size:11px;line-height:1.65}.flow-steps{display:flex;align-items:center;gap:8px;white-space:nowrap}.flow-steps span{padding:9px 11px;border:1px solid #46484e;border-radius:9px;background:#303136;font-size:9px;font-weight:750}.flow-steps b{color:var(--orange)}.order-card{min-height:350px}.order-card table{min-width:940px}.order-id{font-family:ui-monospace,"Cascadia Code",monospace;font-size:9px;color:var(--muted)}.order-action{display:flex;flex-direction:column;align-items:flex-start;gap:5px}.order-action button{min-height:32px;padding:0 10px}.order-action small{max-width:230px;color:var(--red);line-height:1.35}.badge.processing{background:var(--blue-soft);color:var(--blue)}
+@media(max-width:760px){.invoice-flow{align-items:flex-start;flex-direction:column}.flow-steps{white-space:normal;flex-wrap:wrap}}

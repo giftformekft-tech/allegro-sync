@@ -186,6 +186,33 @@ class AllegroClient:
         except URLError as exc:
             raise AllegroError(f"Nem érhető el az Allegro API: {exc.reason}") from exc
 
+    def upload_pdf(self, path: str, content: bytes) -> dict:
+        if not content.startswith(b"%PDF"):
+            raise ValueError("Az Allegrohoz csak érvényes PDF számla tölthető fel.")
+        url = self.config.api_base + "/" + path.lstrip("/")
+        headers = {
+            "Authorization": "Bearer " + self.auth.user_token(),
+            "Accept": self.VENDOR,
+            "Accept-Language": self.config.values.get("ALLEGRO_LANGUAGE", "hu-HU"),
+            "Content-Type": "application/pdf",
+            "User-Agent": self.config.values.get("ALLEGRO_USER_AGENT", "allegro-sync/0.1"),
+        }
+        request = Request(url, data=content, headers=headers, method="PUT")
+        try:
+            with urlopen(request, timeout=60) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+                return {"status": response.status, "body": raw}
+        except HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                details: object = json.loads(raw)
+            except json.JSONDecodeError:
+                details = raw[:1000]
+            message = self._error_message(details) or f"Allegro API hiba (HTTP {exc.code})."
+            raise AllegroApiError(exc.code, message, details) from exc
+        except URLError as exc:
+            raise AllegroError(f"Nem érhető el az Allegro API: {exc.reason}") from exc
+
     @staticmethod
     def _error_message(details: object) -> str:
         if not isinstance(details, dict):

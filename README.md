@@ -9,8 +9,10 @@ rendelésszinkron és szamlazz.hu számlázás.
 > az Allegro OAuth, az élő kategória/GTIN-felderítés és az egytermékes inaktív
 > tesztajánlat létrehozása, a szállítási és GPSR-adatok kezelése, valamint a
 > menthető feltöltési sablonok elkészültek.
-> A tömeges feltöltés, rendelés- és
-> számlaszinkron következő ütem.
+> A rendeléslista, a maszkolt vevői e-mail átvétele, a Számlázz.hu
+> számlakiállítás és a PDF Allegro-rendeléshez feltöltése is elkészült.
+> A Számlázz.hu közvetlen e-mailje választható biztonsági másodpéldány;
+> az elsődleges kézbesítési út mindig az Allegro.
 
 ## Gyors indítás
 

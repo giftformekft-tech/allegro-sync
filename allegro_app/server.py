@@ -15,6 +15,7 @@ from .allegro import AllegroApiError, AllegroAuth, AllegroCatalog, AllegroClient
 from .config import AppConfig
 from .database import Database
 from .importer import parse_csv
+from .invoices import InvoiceError, InvoiceService
 from .offers import OfferService, suggested_parameter_source, suggested_parameter_value
 
 
@@ -49,6 +50,10 @@ class Application:
     @property
     def offers(self) -> OfferService:
         return OfferService(self.config, self.database, self.client)
+
+    @property
+    def invoices(self) -> InvoiceService:
+        return InvoiceService(self.config, self.database, self.client)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -123,13 +128,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"marketplace": self.app.offers.marketplace()})
             elif parsed.path == "/api/offer-options":
                 self._json(self.app.offers.upload_options())
+            elif parsed.path == "/api/orders":
+                self._json({"orders": self.app.invoices.list_orders()})
             elif parsed.path.startswith("/api/"):
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
             else:
                 self._static(parsed.path)
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
-        except (ValueError, AllegroError) as exc:
+        except (ValueError, AllegroError, InvoiceError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -194,11 +201,16 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("responsible_person_id", "")), str(body.get("safety_information", "")),
                 )
                 self._json(result)
+            elif self.path.startswith("/api/orders/") and self.path.endswith("/invoice"):
+                order_id = urllib.parse.unquote(
+                    self.path.removeprefix("/api/orders/").removesuffix("/invoice").strip("/")
+                )
+                self._json(self.app.invoices.create_and_upload(order_id))
             else:
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
-        except (ValueError, AllegroError) as exc:
+        except (ValueError, AllegroError, InvoiceError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -232,6 +244,7 @@ class Handler(BaseHTTPRequestHandler):
                 "invoice_driver": "INVOICE_DRIVER",
                 "szamlazz_agent_key": "SZAMLAZZ_AGENT_KEY",
                 "invoice_prefix": "SZAMLAZZ_INVOICE_PREFIX",
+                "invoice_email_fallback": "SZAMLAZZ_SEND_EMAIL",
             }
             updates = {
                 env_key: str(body[key])

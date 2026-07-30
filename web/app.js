@@ -30,6 +30,7 @@ function navigate(view){
   history.replaceState(null,'',`#${view}`); $('#sidebar').classList.remove('open');
   if(view==='dashboard') loadDashboard(); if(view==='products') loadProducts();
   if(view==='upload') loadUpload();
+  if(view==='orders') loadOrders();
   if(view==='settings') loadSettings(); if(view==='integrations') loadConnectionState();
 }
 
@@ -196,15 +197,46 @@ async function commitImport(){
   try{const data=await api('/api/import/commit',{method:'POST',body:JSON.stringify({import_id:currentImportId})});toast(`${data.imported} termékváltozat importálva.`,'success');setTimeout(()=>navigate('products'),500)}catch(error){toast(error.message,'error');button.disabled=false}
 }
 
+function orderStatus(status){return {READY_FOR_PROCESSING:'Feldolgozásra kész',BOUGHT:'Megvásárolva',FILLED_IN:'Kitöltve',CANCELLED:'Törölve'}[status]||status||'—'}
+function invoiceStatus(row){
+  if(row.invoice_status==='uploaded')return '<span class="badge good">Allegróra feltöltve</span>';
+  if(row.invoice_status==='upload_failed')return '<span class="badge bad">Feltöltési hiba</span>';
+  if(['created','uploading'].includes(row.invoice_status))return '<span class="badge processing">Feltöltésre vár</span>';
+  return '<span class="badge neutral">Nincs számla</span>';
+}
+async function loadOrders(){
+  const refresh=$('#refreshOrders');refresh.disabled=true;
+  try{
+    const data=await api('/api/orders');const rows=data.orders||[];
+    $('#orderEmpty').classList.toggle('hidden',rows.length>0);
+    $('#orderRows').innerHTML=rows.map(row=>{
+      const retry=['upload_failed','created','uploading'].includes(row.invoice_status);
+      const canCreate=row.status==='READY_FOR_PROCESSING'&&row.invoice_status!=='uploaded';
+      const action=canCreate?`<button class="${retry?'secondary':'primary'}" data-invoice-order="${escapeHtml(row.id)}">${retry?'Feltöltés újrapróbálása':'Számla kiállítása'}</button>`:`<span class="muted">${row.invoice_status==='uploaded'?'Kész':'Még nem számlázható'}</span>`;
+      const error=row.invoice_error?`<small title="${escapeHtml(row.invoice_error)}">${escapeHtml(row.invoice_error)}</small>`:'';
+      return `<tr><td><strong>${formatDate(row.updated_at)}</strong><small class="order-id">${escapeHtml(row.id)}</small></td><td><strong>${escapeHtml(row.buyer_name||'Allegro vevő')}</strong><small>${escapeHtml(row.buyer_email)}</small></td><td><strong>${escapeHtml(row.total_amount)} ${escapeHtml(row.currency)}</strong><small>${formatNumber(row.item_count)} db</small></td><td><span class="badge ${row.status==='READY_FOR_PROCESSING'?'good':'neutral'}">${escapeHtml(orderStatus(row.status))}</span></td><td>${invoiceStatus(row)}${row.invoice_number?`<small>${escapeHtml(row.invoice_number)}</small>`:''}</td><td><div class="order-action">${action}${error}</div></td></tr>`;
+    }).join('');
+  }catch(error){$('#orderRows').innerHTML='';$('#orderEmpty').classList.remove('hidden');toast(error.message,'error')}finally{refresh.disabled=false}
+}
+async function createInvoice(orderId,button){
+  if(!confirm('A Számlázz.hu éles számlát állít ki, majd a PDF-et feltöltjük az Allegro rendeléshez. Folytatod?'))return;
+  const original=button.textContent;button.disabled=true;button.textContent='Számlázás és feltöltés…';
+  try{
+    const data=await api(`/api/orders/${encodeURIComponent(orderId)}/invoice`,{method:'POST',body:'{}'});
+    toast(`${data.invoice_number} elkészült és felkerült az Allegro rendeléshez.`,'success');
+    await loadOrders();loadDashboard();
+  }catch(error){toast(error.message,'error');await loadOrders()}finally{button.disabled=false;button.textContent=original}
+}
+
 async function loadSettings(){
-  try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','invoice_driver','invoice_prefix'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
+  try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','invoice_driver','invoice_prefix'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});f.elements.invoice_email_fallback.value=String(Boolean(s.invoice_email_fallback));$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
 }
 async function saveSettings(event){
   event.preventDefault();const form=event.currentTarget;const f=new FormData(form);const body=Object.fromEntries(f.entries());
   try{await api('/api/settings',{method:'PUT',body:JSON.stringify(body)});form.elements.client_secret.value='';form.elements.szamlazz_agent_key.value='';toast('A beállításokat elmentettem.','success');await loadSettings();await loadDashboard()}catch(error){toast(error.message,'error')}
 }
 async function loadConnectionState(){
-  try{const [d,s]=await Promise.all([api('/api/dashboard'),api('/api/settings')]);const c=d.connection;$('#connectionEnvironment').textContent=c.environment==='production'?'Éles':'Sandbox';$('#connectionApp').textContent=c.problems.length?'Beállítás szükséges':'Beállítva';$('#connectionUser').textContent=c.user_connected?'Csatlakoztatva':'Nincs csatlakoztatva';$('#allegroBadge').textContent=c.user_connected?'Csatlakoztatva':c.problems.length?'Nincs beállítva':'Beállítva';$('#allegroBadge').className=`badge ${c.user_connected?'good':c.problems.length?'bad':'neutral'}`;const login=$('#startLogin');login.disabled=false;login.title=c.problems.join(' ')}catch(error){toast(error.message,'error')}
+  try{const [d,s]=await Promise.all([api('/api/dashboard'),api('/api/settings')]);const c=d.connection;$('#connectionEnvironment').textContent=c.environment==='production'?'Éles':'Sandbox';$('#connectionApp').textContent=c.problems.length?'Beállítás szükséges':'Beállítva';$('#connectionUser').textContent=c.user_connected?'Csatlakoztatva':'Nincs csatlakoztatva';$('#allegroBadge').textContent=c.user_connected?'Csatlakoztatva':c.problems.length?'Nincs beállítva':'Beállítva';$('#allegroBadge').className=`badge ${c.user_connected?'good':c.problems.length?'bad':'neutral'}`;$('#invoiceBadge').textContent=s.invoice_ready?'Működésre kész':s.invoice_driver==='szamlazz'?'Agent kulcs hiányzik':'Kikapcsolva';$('#invoiceBadge').className=`badge ${s.invoice_ready?'good':s.invoice_driver==='szamlazz'?'bad':'neutral'}`;const login=$('#startLogin');login.disabled=false;login.title=c.problems.join(' ')}catch(error){toast(error.message,'error')}
 }
 async function checkConnection(){const b=$('#checkConnection');b.disabled=true;b.textContent='Ellenőrzés…';try{const data=await api('/api/auth/check',{method:'POST',body:'{}'});toast(`Sikeres Allegro-kapcsolat (${data.environment}).`,'success');$('#connectionApp').textContent='Ellenőrizve';$('#startLogin').disabled=false;await loadDashboard()}catch(error){toast(error.message,'error')}finally{b.disabled=false;b.textContent='Alkalmazás tesztelése'}}
 async function startLogin(){
@@ -212,7 +244,7 @@ async function startLogin(){
 }
 async function pollLogin(code){try{const data=await api('/api/auth/device/poll',{method:'POST',body:JSON.stringify({device_code:code})});if(data.status==='authorized'){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent='Sikeresen csatlakoztatva.';toast('Az eladói fiók csatlakoztatva.','success');loadConnectionState();loadDashboard()}}catch(error){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent=error.message;toast(error.message,'error')}}
 
-document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}});
+document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}const invoice=event.target.closest('[data-invoice-order]');if(invoice)createInvoice(invoice.dataset.invoiceOrder,invoice)});
 document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters()});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
@@ -224,4 +256,5 @@ $('#useSample').addEventListener('click',async()=>{try{const response=await fetc
 $('#commitImport').addEventListener('click',commitImport);$('#settingsForm').addEventListener('submit',saveSettings);$('#checkConnection').addEventListener('click',checkConnection);$('#startLogin').addEventListener('click',startLogin);
 $('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id,activeTemplate)});$('#stockFromProduct').addEventListener('change',()=>{if($('#stockFromProduct').checked)syncOfferPrice()});$('#applyTemplate').addEventListener('click',applySelectedTemplate);$('#saveTemplate').addEventListener('click',saveTemplate);$('#deleteTemplate').addEventListener('click',deleteTemplate);$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
 $('#preorder').addEventListener('change',togglePreorder);$('#responsibleProducer').addEventListener('change',updateProducerHint);
+$('#refreshOrders').addEventListener('click',loadOrders);
 navigate(location.hash.slice(1)||'dashboard');
