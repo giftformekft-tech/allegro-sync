@@ -19,6 +19,9 @@ COLUMNS = {
     "price_huf": ("price_huf", "ár", "ar", "price"),
     "stock": ("stock", "készlet", "keszlet"),
     "image_url": ("image_url", "kép url", "kep url", "kép", "kep"),
+    "common_image_url": (
+        "temu_common_image_url", "common_image_url", "közös kép url", "kozos kep url",
+    ),
     "weight_g": ("weight_g", "súly", "suly", "tömeg", "tomeg"),
     "brand": ("brand", "márka", "marka"),
     "material": ("material", "anyag"),
@@ -144,6 +147,7 @@ def parse_csv(content: str) -> list[dict]:
             stock = 0
             problems.append("A készlet csak egész szám lehet.")
         image_url = get("image_url")
+        common_image_url = get("common_image_url")
 
         if not name:
             problems.append("Hiányzó terméknév.")
@@ -153,6 +157,8 @@ def parse_csv(content: str) -> list[dict]:
             problems.append("Nincs kép.")
         elif not _valid_url(image_url):
             problems.append("Érvénytelen kép-URL.")
+        if common_image_url and not _valid_url(common_image_url):
+            problems.append("Érvénytelen közös kép-URL.")
         if numeric_price <= 0:
             problems.append("Hiányzó vagy érvénytelen ár.")
         if stock <= 0:
@@ -189,6 +195,7 @@ def parse_csv(content: str) -> list[dict]:
             "price_huf": price,
             "stock": stock,
             "image_url": image_url,
+            "common_image_url": common_image_url,
             "length_cm": length_cm,
             "width_cm": width_cm,
             "problems": problems,

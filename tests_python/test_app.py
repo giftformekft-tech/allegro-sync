@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -26,9 +27,9 @@ from allegro_app.server import Application, AppServer
 from allegro_app.temu import TemuClient, sign_payload
 
 
-SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;length_cm;width_cm
-TEST-POLO-S;TEST;Vidám nyári minta;<p>Pamut póló.</p>;polo;Póló;Fekete;S;5990;20;https://example.com/a.webp;70;50
-HIBAS;TEST;A;;polo;Póló;Kék;M;0;0;rossz-url;;
+SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;temu_common_image_url;length_cm;width_cm
+TEST-POLO-S;TEST;Vidám nyári minta;<p>Pamut póló.</p>;polo;Póló;Fekete;S;5990;20;https://example.com/a.webp;https://example.com/common.webp;70;50
+HIBAS;TEST;A;;polo;Póló;Kék;M;0;0;rossz-url;;;
 """
 
 
@@ -86,6 +87,7 @@ class CsvTests(unittest.TestCase):
         self.assertEqual([], rows[0]["problems"])
         self.assertEqual("70", rows[0]["length_cm"])
         self.assertEqual("50", rows[0]["width_cm"])
+        self.assertEqual("https://example.com/common.webp", rows[0]["common_image_url"])
         self.assertEqual(4, len(rows[1]["problems"]))
 
     def test_missing_required_column_is_rejected(self) -> None:
@@ -99,6 +101,23 @@ class CsvTests(unittest.TestCase):
 
 
 class DatabaseTests(unittest.TestCase):
+    def test_existing_database_gets_common_image_column(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.sqlite"
+            connection = sqlite3.connect(path)
+            try:
+                connection.execute("CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT UNIQUE)")
+                connection.commit()
+            finally:
+                connection.close()
+            Database(path)
+            connection = sqlite3.connect(path)
+            try:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(products)")}
+            finally:
+                connection.close()
+            self.assertIn("common_image_url", columns)
+
     def test_commit_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             db = Database(Path(directory) / "state.sqlite")
@@ -109,6 +128,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(1, len(db.list_products()))
             self.assertEqual("70", db.list_products()[0]["length_cm"])
             self.assertEqual("50", db.list_products()[0]["width_cm"])
+            self.assertEqual("https://example.com/common.webp", db.list_products()[0]["common_image_url"])
 
     def test_offer_template_can_be_saved_updated_and_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

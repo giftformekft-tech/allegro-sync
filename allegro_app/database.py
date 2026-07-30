@@ -49,6 +49,7 @@ class Database:
                     price_huf TEXT NOT NULL,
                     stock INTEGER NOT NULL,
                     image_url TEXT,
+                    common_image_url TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '',
                     brand TEXT NOT NULL DEFAULT '',
                     material TEXT NOT NULL DEFAULT '',
@@ -116,6 +117,7 @@ class Database:
             )
             self._ensure_columns(db, "products", {
                 "description": "TEXT NOT NULL DEFAULT ''",
+                "common_image_url": "TEXT NOT NULL DEFAULT ''",
                 "brand": "TEXT NOT NULL DEFAULT ''",
                 "material": "TEXT NOT NULL DEFAULT ''",
                 "ai_content": "INTEGER NOT NULL DEFAULT 0",
@@ -203,20 +205,22 @@ class Database:
                 db.execute(
                     """INSERT INTO products
                     (sku, parent_sku, name, title, type, color, size, price_huf, stock, image_url,
-                     description, brand, material, ai_content, length_cm, width_cm, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                     common_image_url, description, brand, material, ai_content, length_cm, width_cm, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
                     ON CONFLICT(sku) DO UPDATE SET
                       parent_sku=excluded.parent_sku, name=excluded.name, title=excluded.title,
                       type=excluded.type, color=excluded.color, size=excluded.size,
                       price_huf=excluded.price_huf, stock=excluded.stock,
-                      image_url=excluded.image_url, description=excluded.description,
+                      image_url=excluded.image_url, common_image_url=excluded.common_image_url,
+                      description=excluded.description,
                       brand=excluded.brand, material=excluded.material, ai_content=excluded.ai_content,
                       length_cm=excluded.length_cm, width_cm=excluded.width_cm,
                       updated_at=excluded.updated_at""",
                     (
                         row["sku"], row["parent_sku"], row["name"], row["title"], row["type"],
                         row["color"], row["size"], row["price_huf"], row["stock"],
-                        row["image_url"], row.get("description", ""), row.get("brand", ""),
+                        row["image_url"], row.get("common_image_url", ""),
+                        row.get("description", ""), row.get("brand", ""),
                         row.get("material", ""), 1 if row.get("ai_content") else 0,
                         row.get("length_cm", ""), row.get("width_cm", ""), now_iso(),
                     ),

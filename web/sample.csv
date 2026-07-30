@@ -1,6 +1,6 @@
-sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;weight_g;brand;material;ai_content
-CICA-POLO-FEKETE-S;CICA;Vicces macskás minta;<p>Prémium pamut póló egyedi mintával.</p>;polo;Póló;Fekete;S;5990;100;https://forme.hu/mockups/CICA_polo_fekete_front.webp;180;forme;100% pamut;igen
-CICA-POLO-FEKETE-M;CICA;Vicces macskás minta;<p>Prémium pamut póló egyedi mintával.</p>;polo;Póló;Fekete;M;5990;100;https://forme.hu/mockups/CICA_polo_fekete_front.webp;185;forme;100% pamut;igen
+sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;temu_common_image_url;weight_g;brand;material;ai_content
+CICA-POLO-FEKETE-S;CICA;Vicces macskás minta;<p>Prémium pamut póló egyedi mintával.</p>;polo;Póló;Fekete;S;5990;100;https://forme.hu/mockups/CICA_polo_fekete_front.webp;https://forme.hu/mockups/CICA_common.webp;180;forme;100% pamut;igen
+CICA-POLO-FEKETE-M;CICA;Vicces macskás minta;<p>Prémium pamut póló egyedi mintával.</p>;polo;Póló;Fekete;M;5990;100;https://forme.hu/mockups/CICA_polo_fekete_front.webp;https://forme.hu/mockups/CICA_common.webp;185;forme;100% pamut;igen
 CICA-POLO-FEHER-L;CICA;Vicces macskás minta;<p>Prémium pamut póló egyedi mintával.</p>;polo;Póló;Fehér;L;5990;100;https://forme.hu/mockups/CICA_polo_feher_front.webp;190;forme;100% pamut;igen
 KUTYA-BOGRE-FEHER-U;KUTYA;Kutyás bögre felirattal;<p>Kerámia bögre, mosogatógépben mosható.</p>;bogre;Bögre;Fehér;U;3490;50;https://forme.hu/mockups/KUTYA_bogre_feher_front.webp;320;forme;kerámia;
 HIBAS-1;HIBA;A;;polo;Póló;Zöld;XL;0;0;nem-egy-url;;forme;;

@@ -46,6 +46,11 @@ body[data-platform="temu"] .temu-only.temu-wizard { display: grid; gap: 18px; }
 .temu-variant-row img,.temu-variant-image { width: 42px; height: 42px; border-radius: 9px; object-fit: cover; background: #eee; }
 .temu-variant-row strong,.temu-variant-row small { display: block; }
 .temu-variant-row small { color: var(--muted); margin-top: 3px; }
+.temu-common-image { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid #b9dfcd; border-radius: 11px; background: #f2fbf6; }
+.temu-common-image.empty { border-color: #ead7b4; background: #fffaf0; }
+.temu-common-image img,.temu-common-image-preview { width: 52px; height: 52px; flex: 0 0 52px; border-radius: 9px; object-fit: cover; background: #e8e8e5; }
+.temu-common-image strong,.temu-common-image small { display: block; }
+.temu-common-image small { color: var(--muted); margin-top: 4px; }
 .temu-size-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .temu-size-chips span { padding: 4px 7px; border-radius: 7px; background: #fff; border: 1px solid var(--line); font-size: 9px; font-weight: 750; }
 .temu-mapping-list { display: grid; gap: 10px; margin-top: 13px; }
