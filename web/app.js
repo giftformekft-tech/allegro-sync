@@ -117,7 +117,7 @@ async function inspectCategory(categoryId,template=undefined){
 function renderCategory(category,template=null){
   $('#selectedCategoryName').textContent=category.name;$('#selectedCategoryPath').textContent=category.path.map(p=>p.name).join(' / ');
   renderCategoryFacts(category,category.gtin_required);
-  const required=category.parameters.filter(p=>p.is_gtin?p.required_for_product:(p.required||p.required_for_product));$('#parameterFields').innerHTML=required.length?required.map(parameterField).join(''):'<div class="wizard-empty">Ebben a kategóriában nincs további kötelező paraméter.</div>';
+  const visible=category.parameters.filter(p=>(p.is_gtin?p.required_for_product:(p.required||p.required_for_product))||p.suggested_source);$('#parameterFields').innerHTML=visible.length?visible.map(parameterField).join(''):'<div class="wizard-empty">Ebben a kategóriában nincs automatikusan kitölthető vagy kötelező paraméter.</div>';
   applyTemplateRules(template);
   refreshConditionalParameters();
 }
@@ -132,11 +132,11 @@ function conditionMatches(condition){
 }
 function effectiveRequired(parameter){return Boolean((parameter.required||parameter.required_for_product)&&conditionMatches(parameter.required_if))}
 function refreshConditionalParameters(){
-  if(!selectedCategory)return;selectedCategory.parameters.forEach(parameter=>{const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===String(parameter.id));if(!field)return;const required=effectiveRequired(parameter);const card=field.closest('.parameter-field');card.classList.toggle('gtin-field',Boolean(parameter.is_gtin&&required));card.classList.toggle('optional-field',!required);const mark=card.querySelector('.required-mark');if(mark)mark.classList.toggle('hidden',!required);const state=card.querySelector('.requirement-state');if(state)state.textContent=required?'Kötelező':parameter.is_gtin?'Nincs GTIN – opcionális':'Feltételesen opcionális'});
+  if(!selectedCategory)return;selectedCategory.parameters.forEach(parameter=>{const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===String(parameter.id));if(!field)return;const required=effectiveRequired(parameter);const card=field.closest('.parameter-field');card.classList.toggle('gtin-field',Boolean(parameter.is_gtin&&required));card.classList.toggle('optional-field',!required);const mark=card.querySelector('.required-mark');if(mark)mark.classList.toggle('hidden',!required);const state=card.querySelector('.requirement-state');if(state)state.textContent=required?'Kötelező':parameter.is_gtin?'Nincs GTIN – opcionális':parameter.required_if?'Feltételesen opcionális':'Opcionális'});
   const gtinRequired=selectedCategory.parameters.filter(parameter=>parameter.is_gtin).some(effectiveRequired);renderCategoryFacts(selectedCategory,gtinRequired);
 }
 function parameterField(parameter){
-  const meta=`${parameter.required_for_product?'Termékadat':'Ajánlatadat'}${parameter.unit?` · ${parameter.unit}`:''}`;const dynamic=Boolean(parameter.suggested_source);let control;
+  const meta=`${parameter.describes_product||parameter.required_for_product?'Termékadat':'Ajánlatadat'}${parameter.unit?` · ${parameter.unit}`:''}`;const dynamic=Boolean(parameter.suggested_source);let control;
   if(parameter.type==='dictionary')control=`<select data-parameter="${escapeHtml(parameter.id)}" data-suggested="${escapeHtml(parameter.suggested_value||'')}"><option value="">Válassz…</option>${parameter.dictionary.map(v=>`<option value="${escapeHtml(v.id)}" ${String(v.id)===String(parameter.suggested_value)?'selected':''}>${escapeHtml(v.value)}</option>`).join('')}</select>`;
   else control=`<input data-parameter="${escapeHtml(parameter.id)}" data-suggested="${escapeHtml(parameter.suggested_value||'')}" value="${escapeHtml(parameter.suggested_value||'')}" placeholder="Add meg az értéket">`;
   const source=dynamic?`<span class="parameter-source"><input type="checkbox" data-dynamic-param="${escapeHtml(parameter.id)}" checked> Termékből frissül</span>`:'<span class="parameter-source manual-source">Kézzel vagy sablonból megadható</span>';

@@ -24,9 +24,9 @@ from allegro_app.offers import (
 from allegro_app.server import Application, AppServer
 
 
-SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url
-TEST-POLO-S;TEST;Vidám nyári minta;<p>Pamut póló.</p>;polo;Póló;Fekete;S;5990;20;https://example.com/a.webp
-HIBAS;TEST;A;;polo;Póló;Kék;M;0;0;rossz-url
+SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;length_cm;width_cm
+TEST-POLO-S;TEST;Vidám nyári minta;<p>Pamut póló.</p>;polo;Póló;Fekete;S;5990;20;https://example.com/a.webp;70;50
+HIBAS;TEST;A;;polo;Póló;Kék;M;0;0;rossz-url;;
 """
 
 
@@ -82,6 +82,8 @@ class CsvTests(unittest.TestCase):
         rows = parse_csv(SAMPLE)
         self.assertEqual(2, len(rows))
         self.assertEqual([], rows[0]["problems"])
+        self.assertEqual("70", rows[0]["length_cm"])
+        self.assertEqual("50", rows[0]["width_cm"])
         self.assertEqual(4, len(rows[1]["problems"]))
 
     def test_missing_required_column_is_rejected(self) -> None:
@@ -103,6 +105,8 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(1, db.commit_import(import_id))
             self.assertEqual(1, db.commit_import(import_id))
             self.assertEqual(1, len(db.list_products()))
+            self.assertEqual("70", db.list_products()[0]["length_cm"])
+            self.assertEqual("50", db.list_products()[0]["width_cm"])
 
     def test_offer_template_can_be_saved_updated_and_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -138,6 +142,8 @@ class OfferPayloadTests(unittest.TestCase):
             "material": "100% pamut",
             "color": "Fekete",
             "size": "M",
+            "length_cm": "72",
+            "width_cm": "53",
             "price_huf": "5990",
             "stock": 25,
             "image_url": "https://example.com/polo.webp",
@@ -260,6 +266,40 @@ class OfferPayloadTests(unittest.TestCase):
         self.assertEqual("brand_forme", suggested_parameter_value(parameter, self.product))
         self.assertEqual("brand", suggested_parameter_source(parameter))
         self.assertIsNone(suggested_parameter_source({"name": "EAN (GTIN)"}))
+
+    def test_measurement_parameters_use_imported_variant_values(self) -> None:
+        adult_length = {"id": "201033", "name": "Teljes hosszúság"}
+        adult_width = {"id": "201041", "name": "Szélesség hónalj alatt"}
+        child_length = {"id": "202517", "name": "Teljes hosszúság"}
+        self.assertEqual("length_cm", suggested_parameter_source(adult_length))
+        self.assertEqual("72", suggested_parameter_value(adult_length, self.product))
+        self.assertEqual("width_cm", suggested_parameter_source(adult_width))
+        self.assertEqual("53", suggested_parameter_value(adult_width, self.product))
+        self.assertEqual("length_cm", suggested_parameter_source(child_length))
+
+    def test_measurements_are_sent_as_product_parameters(self) -> None:
+        for parameter_id, name in (
+            ("201033", "Teljes hosszúság"),
+            ("201041", "Szélesség hónalj alatt"),
+        ):
+            self.category["parameters"].append({
+                "id": parameter_id,
+                "name": name,
+                "type": "float",
+                "required": False,
+                "required_for_product": False,
+                "describes_product": True,
+                "is_gtin": False,
+            })
+        payload = self.build({
+            "brand": "brand_forme",
+            "condition": "new",
+            "201033": "72",
+            "201041": "53",
+        })
+        parameters = payload["productSet"][0]["product"]["parameters"]
+        self.assertIn({"id": "201033", "values": ["72"]}, parameters)
+        self.assertIn({"id": "201041", "values": ["53"]}, parameters)
 
     def test_parameter_serialization(self) -> None:
         self.assertEqual(

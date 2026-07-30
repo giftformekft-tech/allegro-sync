@@ -39,6 +39,11 @@ indítás után:
    szerint a fix készletet. A termékhez kötött mezők minden kiválasztott
    pólónál automatikusan frissülnek.
 
+Az importált, kiterítve mért pólóhossz és hónalj alatti szélesség a leírás
+mellett automatikusan bekerül az Allegro megfelelő „További paraméterek”
+mezőibe is. A program a férfi/női és gyerek pólók eltérő paraméter-ID-jét
+kezeli.
+
 Automata tesztek:
 
 ```powershell

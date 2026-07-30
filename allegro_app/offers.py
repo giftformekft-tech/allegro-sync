@@ -17,6 +17,16 @@ EU_COUNTRY_CODES = {
     "RO", "SK", "SI", "ES", "SE",
 }
 
+# Verified live against the Allegro.hu T-shirt categories on 2026-07-30.
+# Adult categories 87913/76104 share the first pair; child category 89528
+# uses the second pair. Width means the laid-flat armpit-to-armpit width.
+MEASUREMENT_PARAMETER_SOURCES = {
+    "201033": "length_cm",  # Teljes hosszúság (adult)
+    "201041": "width_cm",   # Szélesség hónalj alatt (adult)
+    "202517": "length_cm",  # Teljes hosszúság (child)
+    "202513": "width_cm",   # Szélesség a hónaljnál (child)
+}
+
 
 def _fold(value: str) -> str:
     value = unicodedata.normalize("NFKD", value)
@@ -24,6 +34,9 @@ def _fold(value: str) -> str:
 
 
 def suggested_parameter_source(parameter: dict) -> str | None:
+    parameter_id = str(parameter.get("id", ""))
+    if parameter_id in MEASUREMENT_PARAMETER_SOURCES:
+        return MEASUREMENT_PARAMETER_SOURCES[parameter_id]
     name = _fold(str(parameter.get("name", "")))
     if any(word in name for word in ("marka", "brand")):
         return "brand"

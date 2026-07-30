@@ -23,6 +23,8 @@ COLUMNS = {
     "brand": ("brand", "márka", "marka"),
     "material": ("material", "anyag"),
     "ai_content": ("ai_content", "ai"),
+    "length_cm": ("length_cm", "hossz_cm", "hossz (cm)", "hosszúság", "hosszusag"),
+    "width_cm": ("width_cm", "szelesseg_cm", "szélesség (cm)", "szélesség", "szelesseg"),
 }
 REQUIRED = ("sku", "name", "type", "color", "size", "price_huf", "stock", "image_url")
 
@@ -73,6 +75,19 @@ def _price(value: str) -> str:
         first, *rest = cleaned.split(".")
         cleaned = first + "." + "".join(rest)
     return cleaned
+
+
+def _measurement(value: str) -> str | None:
+    value = value.strip().replace(",", ".")
+    if not value:
+        return ""
+    try:
+        number = Decimal(value)
+    except InvalidOperation:
+        return None
+    if number <= 0 or number > 999:
+        return None
+    return format(number.normalize(), "f")
 
 
 def parse_csv(content: str) -> list[dict]:
@@ -149,6 +164,14 @@ def parse_csv(content: str) -> list[dict]:
             problems.append("Hiányzó leírás.")
         elif len(description.encode("utf-8")) > 40000:
             problems.append("A leírás meghaladja a 40 000 bájtot.")
+        length_cm = _measurement(get("length_cm"))
+        width_cm = _measurement(get("width_cm"))
+        if length_cm is None:
+            problems.append("A póló hossza csak 0 és 999 közötti pozitív szám lehet.")
+            length_cm = ""
+        if width_cm is None:
+            problems.append("A póló szélessége csak 0 és 999 közötti pozitív szám lehet.")
+            width_cm = ""
 
         rows.append({
             "line": line_number,
@@ -166,6 +189,8 @@ def parse_csv(content: str) -> list[dict]:
             "price_huf": price,
             "stock": stock,
             "image_url": image_url,
+            "length_cm": length_cm,
+            "width_cm": width_cm,
             "problems": problems,
         })
     return rows
