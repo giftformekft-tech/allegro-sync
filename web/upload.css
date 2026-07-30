@@ -414,6 +414,133 @@
   padding: 0;
 }
 
+.offer-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+  margin-top: 13px;
+}
+
+.offer-setting-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfbfa;
+}
+
+.setting-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.setting-symbol {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--orange-soft);
+  font-size: 16px;
+}
+
+.setting-title strong,
+.setting-title small {
+  display: block;
+}
+
+.setting-title strong {
+  font-size: 12px;
+}
+
+.setting-title small,
+.setting-note,
+.setting-fields label small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.setting-title small {
+  margin-top: 3px;
+}
+
+.setting-fields {
+  display: grid;
+  gap: 11px;
+  margin-top: 13px;
+}
+
+.setting-fields.two-fields {
+  grid-template-columns: 1fr 1fr;
+}
+
+.setting-fields label,
+.preorder-date {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-fields label > span,
+.preorder-date > span {
+  color: #565961;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.setting-fields b,
+.preorder-date b {
+  color: var(--orange);
+}
+
+.setting-fields select,
+.setting-fields textarea,
+.preorder-date input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #dfe0e4;
+  border-radius: 9px;
+  outline: 0;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+
+.setting-fields textarea {
+  min-height: 82px;
+  padding-top: 10px;
+  resize: vertical;
+}
+
+.setting-fields select:focus,
+.setting-fields textarea:focus,
+.preorder-date input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-soft);
+}
+
+.preorder-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+  color: #565961;
+  font-size: 10px;
+}
+
+.preorder-date {
+  margin-top: 10px;
+}
+
+.setting-note {
+  margin: 13px 0 0;
+  line-height: 1.5;
+}
+
 .payload-wrap {
   margin-top: 17px;
   overflow: hidden;
@@ -503,7 +630,8 @@
 
 @media (max-width: 900px) {
   .verdict-grid,
-  .parameter-grid {
+  .parameter-grid,
+  .offer-settings-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -534,7 +662,9 @@
   }
 
   .verdict-grid,
-  .parameter-grid {
+  .parameter-grid,
+  .offer-settings-grid,
+  .setting-fields.two-fields {
     grid-template-columns: 1fr;
   }
 

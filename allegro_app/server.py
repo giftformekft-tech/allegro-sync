@@ -121,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.app.config.public_values())
             elif parsed.path == "/api/marketplace":
                 self._json({"marketplace": self.app.offers.marketplace()})
+            elif parsed.path == "/api/offer-options":
+                self._json(self.app.offers.upload_options())
             elif parsed.path.startswith("/api/"):
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
             else:
@@ -174,7 +176,10 @@ class Handler(BaseHTTPRequestHandler):
                 selections = body.get("parameters") if isinstance(body.get("parameters"), dict) else {}
                 preview = self.app.offers.preview(
                     int(body.get("product_id", 0)), category, selections,
-                    str(body.get("price_amount", "")), str(body.get("stock_available", ""))
+                    str(body.get("price_amount", "")), str(body.get("stock_available", "")),
+                    str(body.get("shipping_rate_id", "")), str(body.get("handling_time", "PT24H")),
+                    str(body.get("shipment_date", "")), str(body.get("responsible_producer_id", "")),
+                    str(body.get("responsible_person_id", "")), str(body.get("safety_information", "")),
                 )
                 self._json({**preview, "environment": self.app.config.environment})
             elif self.path == "/api/offers/create":
@@ -183,7 +188,10 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.app.offers.create(
                     int(body.get("product_id", 0)), category, selections,
                     str(body.get("confirmation", "")), str(body.get("price_amount", "")),
-                    str(body.get("stock_available", ""))
+                    str(body.get("stock_available", "")), str(body.get("shipping_rate_id", "")),
+                    str(body.get("handling_time", "PT24H")), str(body.get("shipment_date", "")),
+                    str(body.get("responsible_producer_id", "")),
+                    str(body.get("responsible_person_id", "")), str(body.get("safety_information", "")),
                 )
                 self._json(result)
             else:

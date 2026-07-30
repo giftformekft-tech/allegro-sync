@@ -82,7 +82,12 @@ az Allegro 12-75 karakteres és legalább háromszavas címszabályát.
 6. Ellenőrizd az Allegro fiókból automatikusan beolvasott alappiacot és
    pénznemet. HUF esetén az importált ár automatikusan megjelenik; más
    pénznemnél adj meg külön tesztárat.
-7. Készíts JSON-előnézetet. A feltöltéshez írd be pontosan: `FELTÖLTÉS`.
+7. Válaszd ki a fiókban elmentett szállítási árlistát és a feladási időt.
+   Előrendelésnél a várható feladási dátum is kötelező.
+8. Válaszd ki a gyártó GPSR-rekordját, szükség esetén az EU-s felelős személyt,
+   és add meg a biztonsági információt. Ezek különálló adatok, nem a márka
+   kategóriaparaméterének másolatai.
+9. Készíts JSON-előnézetet. A feltöltéshez írd be pontosan: `FELTÖLTÉS`.
 
 ## Sablonok használata
 
@@ -92,6 +97,8 @@ az Allegro 12-75 karakteres és legalább háromszavas címszabályát.
 3. Vedd ki a jelölést azoknál a mezőknél, amelyek minden ilyen pólónál
    azonosak, és válaszd ki vagy írd be a mentendő fix értéket.
 4. A készletnél is választhatsz termékből frissülő vagy fix darabszámot.
+   A szállítási árlista, feladási idő, gyártó, felelős személy és biztonsági
+   szöveg fix sablonadatként menthető.
 5. Adj nevet a sablonnak, majd kattints a **Sablon mentése** gombra. Azonos
    névvel mentve a meglévő sablon frissül.
 

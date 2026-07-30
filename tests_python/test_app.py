@@ -136,19 +136,30 @@ class OfferPayloadTests(unittest.TestCase):
             ],
         }
 
+    def build(self, selections: dict, **overrides: object) -> dict:
+        options = {
+            "shipping_rate_id": "rate-1",
+            "responsible_producer_id": "producer-1",
+            "safety_information": "Rendeltetésszerű használatra. Nyílt lángtól távol tartandó.",
+        }
+        options.update(overrides)
+        return build_offer_payload(self.product, self.category, selections, **options)
+
     def test_builds_inactive_huf_offer(self) -> None:
-        payload = build_offer_payload(
-            self.product, self.category, {"brand": "brand_forme", "condition": "new"}
-        )
+        payload = self.build({"brand": "brand_forme", "condition": "new"})
         self.assertEqual("INACTIVE", payload["publication"]["status"])
         self.assertEqual("HUF", payload["sellingMode"]["price"]["currency"])
         self.assertEqual("CICA-POLO-FEKETE-M", payload["external"]["id"])
         self.assertEqual([{"id": "brand", "valuesIds": ["brand_forme"]}], payload["productSet"][0]["product"]["parameters"])
         self.assertEqual([{"id": "condition", "valuesIds": ["new"]}], payload["parameters"])
+        self.assertEqual("rate-1", payload["delivery"]["shippingRates"]["id"])
+        self.assertEqual("PT24H", payload["delivery"]["handlingTime"])
+        self.assertEqual("producer-1", payload["productSet"][0]["responsibleProducer"]["id"])
+        self.assertEqual("TEXT", payload["productSet"][0]["safetyInformation"]["type"])
 
     def test_missing_required_parameter_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Hiányzó kötelező"):
-            build_offer_payload(self.product, self.category, {"brand": "brand_forme"})
+            self.build({"brand": "brand_forme"})
 
     def test_gtin_category_is_rejected_without_gtin(self) -> None:
         self.category["parameters"].append({
@@ -161,7 +172,7 @@ class OfferPayloadTests(unittest.TestCase):
             "is_gtin": True,
         })
         with self.assertRaisesRegex(ValueError, "GTIN"):
-            build_offer_payload(self.product, self.category, {"brand": "brand_forme", "condition": "new"})
+            self.build({"brand": "brand_forme", "condition": "new"})
 
     def test_conditional_gtin_is_optional_for_unlisted_brand(self) -> None:
         gtin = {
@@ -183,7 +194,7 @@ class OfferPayloadTests(unittest.TestCase):
         self.category["parameters"].append(gtin)
         selections = {"brand": "brand_forme", "condition": "new"}
         self.assertFalse(parameter_is_required(gtin, selections))
-        payload = build_offer_payload(self.product, self.category, selections)
+        payload = self.build(selections)
         self.assertNotIn("225693", {item["id"] for item in payload["productSet"][0]["product"]["parameters"]})
 
     def test_conditional_gtin_is_required_for_listed_brand(self) -> None:
@@ -206,7 +217,7 @@ class OfferPayloadTests(unittest.TestCase):
         selections = {"brand": "protected_brand", "condition": "new"}
         self.assertTrue(parameter_is_required(gtin, selections))
         with self.assertRaisesRegex(ValueError, "GTIN"):
-            build_offer_payload(self.product, self.category, selections)
+            self.build(selections)
 
     def test_dictionary_suggestion_matches_imported_value(self) -> None:
         parameter = self.category["parameters"][0]
@@ -221,9 +232,7 @@ class OfferPayloadTests(unittest.TestCase):
         )
 
     def test_uses_marketplace_currency_language_and_manual_price(self) -> None:
-        payload = build_offer_payload(
-            self.product,
-            self.category,
+        payload = self.build(
             {"brand": "brand_forme", "condition": "new"},
             currency="PLN",
             language="pl-PL",
@@ -234,17 +243,13 @@ class OfferPayloadTests(unittest.TestCase):
 
     def test_invalid_price_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "nem érvényes"):
-            build_offer_payload(
-                self.product,
-                self.category,
+            self.build(
                 {"brand": "brand_forme", "condition": "new"},
                 price_amount="nem-ár",
             )
 
     def test_template_can_override_stock(self) -> None:
-        payload = build_offer_payload(
-            self.product,
-            self.category,
+        payload = self.build(
             {"brand": "brand_forme", "condition": "new"},
             stock_available="7",
         )
@@ -252,12 +257,31 @@ class OfferPayloadTests(unittest.TestCase):
 
     def test_negative_template_stock_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "nem lehet negatív"):
-            build_offer_payload(
-                self.product,
-                self.category,
+            self.build(
                 {"brand": "brand_forme", "condition": "new"},
                 stock_available="-1",
             )
+
+    def test_missing_delivery_and_gpsr_are_rejected(self) -> None:
+        selections = {"brand": "brand_forme", "condition": "new"}
+        with self.assertRaisesRegex(ValueError, "szállítási árlistát"):
+            build_offer_payload(
+                self.product, self.category, selections,
+                responsible_producer_id="producer-1", safety_information="Biztonsági szöveg.",
+            )
+        with self.assertRaisesRegex(ValueError, "GPSR"):
+            self.build(selections, responsible_producer_id="")
+        with self.assertRaisesRegex(ValueError, "1–5000"):
+            self.build(selections, safety_information="")
+
+    def test_preorder_adds_future_shipment_date(self) -> None:
+        payload = self.build(
+            {"brand": "brand_forme", "condition": "new"},
+            shipment_date="2099-05-01T12:00:00Z",
+            responsible_person_id="person-1",
+        )
+        self.assertEqual("2099-05-01T12:00:00Z", payload["delivery"]["shipmentDate"])
+        self.assertEqual("person-1", payload["productSet"][0]["responsiblePerson"]["id"])
 
 
 class MarketplaceTests(unittest.TestCase):
@@ -265,6 +289,17 @@ class MarketplaceTests(unittest.TestCase):
         def request(self, method: str, path: str, **_: object) -> dict:
             if path == "/me":
                 return {"body": {"baseMarketplace": {"id": "allegro-hu"}}}
+            if path == "/sale/shipping-rates":
+                return {"body": {"shippingRates": [{
+                    "id": "rate-1", "name": "futár", "marketplaces": [{"id": "allegro-hu"}],
+                }]}}
+            if path == "/sale/responsible-producers":
+                return {"body": {"responsibleProducers": [{
+                    "id": "producer-1", "name": "Forme",
+                    "producerData": {"address": {"countryCode": "HU"}},
+                }]}}
+            if path == "/sale/responsible-persons":
+                return {"body": {"responsiblePersons": [{"id": "person-1", "name": "EU felelős"}]}}
             return {
                 "body": {
                     "marketplaces": [{
@@ -284,6 +319,18 @@ class MarketplaceTests(unittest.TestCase):
                 {"id": "allegro-hu", "currency": "HUF", "language": "hu-HU", "languages": ["hu-HU", "en-US"]},
                 service.marketplace(),
             )
+
+    def test_reads_shipping_and_gpsr_account_options(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = OfferService(
+                AppConfig(root, {"ALLEGRO_LANGUAGE": "hu-HU"}),
+                Database(root / "state.sqlite"), self.Client(),
+            )
+            options = service.upload_options()
+            self.assertEqual("futár", options["shipping_rates"][0]["name"])
+            self.assertEqual("Forme", options["responsible_producers"][0]["name"])
+            service._validate_account_choices("allegro-hu", "rate-1", "producer-1", "")
 
 
 class WebAssetTests(unittest.TestCase):

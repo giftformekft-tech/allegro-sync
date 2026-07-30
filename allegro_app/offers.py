@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .allegro import AllegroClient, AllegroError
 from .config import AppConfig
 from .database import Database
+
+
+EU_COUNTRY_CODES = {
+    "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE",
+    "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT",
+    "RO", "SK", "SI", "ES", "SE",
+}
 
 
 def _fold(value: str) -> str:
@@ -100,6 +108,12 @@ def build_offer_payload(
     language: str = "hu-HU",
     price_amount: str | None = None,
     stock_available: str | int | None = None,
+    shipping_rate_id: str | None = None,
+    handling_time: str = "PT24H",
+    shipment_date: str | None = None,
+    responsible_producer_id: str | None = None,
+    responsible_person_id: str | None = None,
+    safety_information: str | None = None,
 ) -> dict:
     if not product.get("image_url"):
         raise ValueError("A termékhez nincs kép URL, ezért nem tölthető fel.")
@@ -152,15 +166,49 @@ def build_offer_payload(
         raise ValueError("A készlet csak egész darabszám lehet.") from exc
     if stock < 0:
         raise ValueError("A készlet nem lehet negatív.")
+    shipping_rate_id = (shipping_rate_id or "").strip()
+    if not shipping_rate_id:
+        raise ValueError("Válassz szállítási árlistát.")
+    handling_time = handling_time.strip()
+    if not re.fullmatch(r"P(?:\d+D|T\d+H)", handling_time):
+        raise ValueError("Érvénytelen feladási idő.")
+    producer_id = (responsible_producer_id or "").strip()
+    if not producer_id:
+        raise ValueError("Válaszd ki a termék gyártójának GPSR-adatait.")
+    safety_text = (safety_information or "").strip()
+    if not 1 <= len(safety_text) <= 5000:
+        raise ValueError("A biztonsági információ 1–5000 karakter lehet.")
+    delivery: dict[str, Any] = {
+        "shippingRates": {"id": shipping_rate_id},
+        "handlingTime": handling_time,
+    }
+    if shipment_date:
+        normalized_date = shipment_date.strip()
+        try:
+            parsed_date = datetime.fromisoformat(normalized_date.replace("Z", "+00:00"))
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+            if parsed_date <= datetime.now(timezone.utc):
+                raise ValueError
+        except ValueError as exc:
+            raise ValueError("Az előrendelés várható feladási ideje jövőbeli dátum legyen.") from exc
+        delivery["shipmentDate"] = normalized_date
+    product_set_item: dict[str, Any] = {
+        "product": {
+            "name": str(product["title"])[:75],
+            "category": {"id": str(category["id"])},
+            "parameters": product_parameters,
+            "images": [image],
+        },
+        "responsibleProducer": {"type": "ID", "id": producer_id},
+        "safetyInformation": {"type": "TEXT", "description": safety_text},
+        "marketedBeforeGPSRObligation": False,
+    }
+    person_id = (responsible_person_id or "").strip()
+    if person_id:
+        product_set_item["responsiblePerson"] = {"id": person_id}
     payload: dict[str, Any] = {
-        "productSet": [{
-            "product": {
-                "name": str(product["title"])[:75],
-                "category": {"id": str(category["id"])},
-                "parameters": product_parameters,
-                "images": [image],
-            }
-        }],
+        "productSet": [product_set_item],
         "name": str(product["title"])[:75],
         "category": {"id": str(category["id"])},
         "parameters": offer_parameters,
@@ -169,6 +217,7 @@ def build_offer_payload(
             "price": {"amount": price, "currency": currency},
         },
         "stock": {"available": stock, "unit": "UNIT"},
+        "delivery": delivery,
         "publication": {"status": "INACTIVE"},
         "language": language,
         "images": [image],
@@ -209,6 +258,60 @@ class OfferService:
             raise AllegroError(f"Az Allegro nem adott meg alappénznemet ehhez: {marketplace_id}")
         return {"id": marketplace_id, "currency": currency, "language": language, "languages": codes}
 
+    def shipping_rates(self, marketplace_id: str | None = None) -> list[dict]:
+        marketplace_id = marketplace_id or self.marketplace()["id"]
+        body = self.client.request(
+            "GET", "/sale/shipping-rates", query={"marketplace": marketplace_id}
+        )["body"]
+        return [item for item in body.get("shippingRates", []) if isinstance(item, dict)]
+
+    def responsible_producers(self) -> list[dict]:
+        body = self.client.request(
+            "GET", "/sale/responsible-producers", query={"limit": "1000", "offset": "0"}
+        )["body"]
+        return [item for item in body.get("responsibleProducers", []) if isinstance(item, dict)]
+
+    def responsible_persons(self) -> list[dict]:
+        body = self.client.request(
+            "GET", "/sale/responsible-persons", query={"limit": "1000", "offset": "0"}
+        )["body"]
+        return [item for item in body.get("responsiblePersons", []) if isinstance(item, dict)]
+
+    def upload_options(self) -> dict:
+        marketplace = self.marketplace()
+        return {
+            "marketplace": marketplace,
+            "shipping_rates": self.shipping_rates(marketplace["id"]),
+            "responsible_producers": self.responsible_producers(),
+            "responsible_persons": self.responsible_persons(),
+        }
+
+    def _validate_account_choices(
+        self,
+        marketplace_id: str,
+        shipping_rate_id: str,
+        responsible_producer_id: str,
+        responsible_person_id: str,
+    ) -> None:
+        rates = self.shipping_rates(marketplace_id)
+        if not any(str(item.get("id")) == shipping_rate_id for item in rates):
+            raise ValueError("A kiválasztott szállítási árlista nem használható ezen a piacon.")
+        producers = self.responsible_producers()
+        producer = next(
+            (item for item in producers if str(item.get("id")) == responsible_producer_id), None
+        )
+        if producer is None:
+            raise ValueError("A kiválasztott gyártói GPSR-rekord nem található a fiókban.")
+        producer_data = producer.get("producerData") if isinstance(producer.get("producerData"), dict) else {}
+        address = producer_data.get("address") if isinstance(producer_data.get("address"), dict) else {}
+        country_code = str(address.get("countryCode", "")).upper()
+        if country_code and country_code not in EU_COUNTRY_CODES and not responsible_person_id:
+            raise ValueError("EU-n kívüli gyártóhoz válassz EU-s felelős személyt.")
+        if responsible_person_id:
+            persons = self.responsible_persons()
+            if not any(str(item.get("id")) == responsible_person_id for item in persons):
+                raise ValueError("A kiválasztott felelős személy nem található a fiókban.")
+
     def preview(
         self,
         product_id: int,
@@ -216,6 +319,12 @@ class OfferService:
         selections: dict[str, Any],
         price_amount: str | None = None,
         stock_available: str | int | None = None,
+        shipping_rate_id: str = "",
+        handling_time: str = "PT24H",
+        shipment_date: str = "",
+        responsible_producer_id: str = "",
+        responsible_person_id: str = "",
+        safety_information: str = "",
     ) -> dict:
         product = self.database.get_product(product_id)
         marketplace = self.marketplace()
@@ -223,6 +332,9 @@ class OfferService:
             raise ValueError(
                 f"A fiók alappénzneme {marketplace['currency']}, ezért adj meg külön tesztárat ebben a pénznemben."
             )
+        self._validate_account_choices(
+            marketplace["id"], shipping_rate_id, responsible_producer_id, responsible_person_id
+        )
         payload = build_offer_payload(
             product,
             category,
@@ -231,6 +343,12 @@ class OfferService:
             language=marketplace["language"],
             price_amount=price_amount,
             stock_available=stock_available,
+            shipping_rate_id=shipping_rate_id,
+            handling_time=handling_time,
+            shipment_date=shipment_date or None,
+            responsible_producer_id=responsible_producer_id,
+            responsible_person_id=responsible_person_id,
+            safety_information=safety_information,
         )
         return {"payload": payload, "marketplace": marketplace}
 
@@ -242,10 +360,20 @@ class OfferService:
         confirmation: str,
         price_amount: str | None = None,
         stock_available: str | int | None = None,
+        shipping_rate_id: str = "",
+        handling_time: str = "PT24H",
+        shipment_date: str = "",
+        responsible_producer_id: str = "",
+        responsible_person_id: str = "",
+        safety_information: str = "",
     ) -> dict:
         if confirmation.strip().upper() != "FELTÖLTÉS":
             raise ValueError("A létrehozáshoz írd be pontosan: FELTÖLTÉS")
-        preview = self.preview(product_id, category, selections, price_amount, stock_available)
+        preview = self.preview(
+            product_id, category, selections, price_amount, stock_available,
+            shipping_rate_id, handling_time, shipment_date, responsible_producer_id,
+            responsible_person_id, safety_information,
+        )
         response = self.client.request("POST", "/sale/product-offers", body=preview["payload"])
         body = response["body"] if isinstance(response["body"], dict) else {}
         offer_id = str(body.get("id", "")) or None

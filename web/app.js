@@ -6,6 +6,7 @@ let deviceTimer = null;
 let selectedCategory = null;
 let uploadProducts = [];
 let uploadMarketplace = null;
+let uploadOptions = null;
 let uploadTemplates = [];
 let activeTemplate = null;
 
@@ -71,12 +72,25 @@ async function loadUpload(){
     $('#uploadEnvironment').textContent=settings.environment==='production'?'ÉLES':'SANDBOX';$('#uploadEnvironment').classList.toggle('production',settings.environment==='production');
     if(!uploadProducts.length)toast('Előbb importálj legalább egy megfelelő terméket.','error');
     try{
-      const data=await api('/api/marketplace');uploadMarketplace=data.marketplace;
+      const data=await api('/api/offer-options');uploadOptions=data;uploadMarketplace=data.marketplace;
       $('#marketplaceId').textContent=uploadMarketplace.id;$('#marketplaceCurrency').textContent=uploadMarketplace.currency;
+      renderOfferOptions(data);
       syncOfferPrice();
-    }catch(error){uploadMarketplace=null;$('#marketplaceId').textContent='Eladói fiók szükséges';$('#marketplaceCurrency').textContent='—';toast(error.message,'error')}
+    }catch(error){uploadOptions=null;uploadMarketplace=null;$('#marketplaceId').textContent='Eladói fiók szükséges';$('#marketplaceCurrency').textContent='—';toast(error.message,'error')}
   }catch(error){toast(error.message,'error')}
 }
+function renderOfferOptions(data){
+  const rates=data.shipping_rates||[];const producers=data.responsible_producers||[];const persons=data.responsible_persons||[];
+  $('#shippingRate').innerHTML='<option value="">Válassz árlistát…</option>'+rates.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml((item.marketplaces||[]).map(m=>m.id).join(', '))}</option>`).join('');
+  $('#responsibleProducer').innerHTML='<option value="">Válassz gyártót…</option>'+producers.map(item=>{const country=item.producerData?.address?.countryCode||'';return `<option value="${escapeHtml(item.id)}" data-country="${escapeHtml(country)}">${escapeHtml(item.name)}${country?` · ${escapeHtml(country)}`:''}</option>`}).join('');
+  $('#responsiblePerson').innerHTML='<option value="">Nem szükséges / nincs kiválasztva</option>'+persons.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  if(rates.length===1)$('#shippingRate').value=String(rates[0].id);if(producers.length===1)$('#responsibleProducer').value=String(producers[0].id);
+  if(!rates.length)toast('Nincs használható szállítási árlista az alappiacon.','error');
+  if(!producers.length)toast('Előbb ments el gyártói adatokat az Allegro-fiókban.','error');
+  updateProducerHint();
+}
+function updateProducerHint(){const option=$('#responsibleProducer').selectedOptions[0];const country=option?.dataset.country||'';const eu=['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'];$('#producerHint').textContent=country&&!eu.includes(country)?`${country}: EU-n kívüli gyártó, a felelős személy kötelező.`:country?`${country}: EU-s gyártó, külön felelős személy általában nem szükséges.`:'Az Allegro-fiókban elmentett gyártói rekord.'}
+function togglePreorder(){$('#preorderDateWrap').classList.toggle('hidden',!$('#preorder').checked)}
 function syncOfferPrice(){
   const product=uploadProducts.find(item=>String(item.id)===$('#offerProduct').value);
   if(uploadMarketplace?.currency==='HUF'&&product)$('#offerPrice').value=product.price_huf||'';
@@ -131,15 +145,17 @@ function applyTemplateRules(template){
   const rules=new Map((template?.rules||[]).map(rule=>[String(rule.parameter_id),rule]));
   $$('[data-parameter]',$('#parameterFields')).forEach(field=>{const rule=rules.get(field.dataset.parameter);if(!rule)return;const dynamic=$(`[data-dynamic-param="${field.dataset.parameter}"]`,$('#parameterFields'));if(dynamic)dynamic.checked=rule.mode==='product';if(rule.mode==='fixed'||!dynamic)field.value=rule.value;else field.value=field.dataset.suggested||'';field.closest('.parameter-field').classList.toggle('dynamic',Boolean(dynamic?.checked))});
   const stockRule=rules.get('__stock__');if(stockRule){$('#stockFromProduct').checked=stockRule.mode==='product';if(stockRule.mode==='fixed')$('#offerStock').value=stockRule.value;else syncOfferPrice()}
+  const fixedFields={__shipping_rate__:'#shippingRate',__handling_time__:'#handlingTime',__producer__:'#responsibleProducer',__responsible_person__:'#responsiblePerson',__safety_information__:'#safetyInformation'};Object.entries(fixedFields).forEach(([key,selector])=>{const rule=rules.get(key);if(rule&&rule.mode==='fixed')$(selector).value=rule.value});
+  const preorderRule=rules.get('__preorder__');if(preorderRule)$('#preorder').checked=preorderRule.value==='true';togglePreorder();updateProducerHint();
   refreshConditionalParameters();
 }
-function offerRequest(){const parameters={};$$('[data-parameter]',$('#parameterFields')).forEach(field=>{if(field.value)parameters[field.dataset.parameter]=field.value});return{product_id:Number($('#offerProduct').value||0),category_id:selectedCategory?.id||'',price_amount:$('#offerPrice').value.trim(),stock_available:$('#offerStock').value.trim(),parameters}}
+function offerRequest(){const parameters={};$$('[data-parameter]',$('#parameterFields')).forEach(field=>{if(field.value)parameters[field.dataset.parameter]=field.value});let shipmentDate='';if($('#preorder').checked){const raw=$('#shipmentDate').value;if(!raw)throw new Error('Előrendelésnél add meg a várható feladási dátumot.');shipmentDate=new Date(raw).toISOString()}return{product_id:Number($('#offerProduct').value||0),category_id:selectedCategory?.id||'',price_amount:$('#offerPrice').value.trim(),stock_available:$('#offerStock').value.trim(),shipping_rate_id:$('#shippingRate').value,handling_time:$('#handlingTime').value,shipment_date:shipmentDate,responsible_producer_id:$('#responsibleProducer').value,responsible_person_id:$('#responsiblePerson').value,safety_information:$('#safetyInformation').value.trim(),parameters}}
 async function previewOffer(){
   if(!selectedCategory){toast('Előbb válassz és ellenőrizz egy kategóriát.','error');return}if(!$('#offerProduct').value){toast('Válassz egy importált terméket.','error');return}
-  try{const data=await api('/api/offers/preview',{method:'POST',body:JSON.stringify(offerRequest())});uploadMarketplace=data.marketplace;$('#marketplaceId').textContent=data.marketplace.id;$('#marketplaceCurrency').textContent=data.marketplace.currency;$('#offerPayload').textContent=JSON.stringify(data.payload,null,2);$('#payloadWrap').classList.remove('hidden');toast('A feltöltési payload elkészült.','success')}catch(error){toast(error.message,'error')}
+  try{const request=offerRequest();const data=await api('/api/offers/preview',{method:'POST',body:JSON.stringify(request)});uploadMarketplace=data.marketplace;$('#marketplaceId').textContent=data.marketplace.id;$('#marketplaceCurrency').textContent=data.marketplace.currency;$('#offerPayload').textContent=JSON.stringify(data.payload,null,2);$('#payloadWrap').classList.remove('hidden');toast('A feltöltési payload elkészült.','success')}catch(error){toast(error.message,'error')}
 }
 async function createOffer(){
-  if(!selectedCategory){toast('Előbb válassz kategóriát.','error');return}const request={...offerRequest(),confirmation:$('#uploadConfirmation').value};
+  if(!selectedCategory){toast('Előbb válassz kategóriát.','error');return}let request;try{request={...offerRequest(),confirmation:$('#uploadConfirmation').value}}catch(error){toast(error.message,'error');return}
   if($('#uploadEnvironment').classList.contains('production')&&!confirm('Ez az ÉLES Allegro-fiókban hoz létre egy INAKTÍV ajánlatot. Folytatod?'))return;
   const button=$('#createOffer');button.textContent='Feltöltés folyamatban…';
   try{const data=await api('/api/offers/create',{method:'POST',body:JSON.stringify(request)});const result=$('#offerResult');result.classList.remove('hidden');result.innerHTML=`${icon('i-check')}<div><strong>Az inaktív ajánlat létrejött.</strong><span>Ajánlatazonosító: ${escapeHtml(data.offer_id||'feldolgozás alatt')} · HTTP ${data.status}</span></div>`;toast('Az Allegro tesztajánlat létrejött.','success');loadProducts();loadDashboard()}catch(error){toast(error.message,'error')}finally{button.innerHTML=`${icon('i-upload')}Inaktív tesztajánlat létrehozása`}
@@ -151,7 +167,8 @@ async function applySelectedTemplate(){
 }
 function collectTemplateRules(){
   const rules=$$('[data-parameter]',$('#parameterFields')).map(field=>{const dynamic=$(`[data-dynamic-param="${field.dataset.parameter}"]`,$('#parameterFields'));return{parameter_id:field.dataset.parameter,mode:dynamic?.checked?'product':'fixed',value:dynamic?.checked?'':field.value}});
-  rules.push({parameter_id:'__stock__',mode:$('#stockFromProduct').checked?'product':'fixed',value:$('#stockFromProduct').checked?'':$('#offerStock').value.trim()});return rules;
+  rules.push({parameter_id:'__stock__',mode:$('#stockFromProduct').checked?'product':'fixed',value:$('#stockFromProduct').checked?'':$('#offerStock').value.trim()});
+  [['__shipping_rate__','#shippingRate'],['__handling_time__','#handlingTime'],['__producer__','#responsibleProducer'],['__responsible_person__','#responsiblePerson'],['__safety_information__','#safetyInformation']].forEach(([parameter,selector])=>rules.push({parameter_id:parameter,mode:'fixed',value:$(selector).value}));rules.push({parameter_id:'__preorder__',mode:'fixed',value:String($('#preorder').checked)});return rules;
 }
 async function saveTemplate(){
   if(!selectedCategory){toast('Előbb válassz és ellenőrizz egy kategóriát.','error');return}const name=$('#templateName').value.trim();
@@ -206,4 +223,5 @@ const dz=$('#dropzone');['dragenter','dragover'].forEach(name=>dz.addEventListen
 $('#useSample').addEventListener('click',async()=>{try{const response=await fetch('/sample.csv');if(!response.ok)throw new Error('A mintafájl nem érhető el.');const blob=await response.blob();previewFile(new File([blob],'export-minta.csv',{type:'text/csv'}))}catch(error){toast(error.message,'error')}});
 $('#commitImport').addEventListener('click',commitImport);$('#settingsForm').addEventListener('submit',saveSettings);$('#checkConnection').addEventListener('click',checkConnection);$('#startLogin').addEventListener('click',startLogin);
 $('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id,activeTemplate)});$('#stockFromProduct').addEventListener('change',()=>{if($('#stockFromProduct').checked)syncOfferPrice()});$('#applyTemplate').addEventListener('click',applySelectedTemplate);$('#saveTemplate').addEventListener('click',saveTemplate);$('#deleteTemplate').addEventListener('click',deleteTemplate);$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
+$('#preorder').addEventListener('change',togglePreorder);$('#responsibleProducer').addEventListener('change',updateProducerHint);
 navigate(location.hash.slice(1)||'dashboard');

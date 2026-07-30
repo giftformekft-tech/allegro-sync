@@ -7,7 +7,8 @@ rendelésszinkron és szamlazz.hu számlázás.
 > **Státusz: működő első alkalmazásverzió.** A kattintásos Python-felület,
 > a CSV-előnézet és -validálás, a helyi SQLite állapottár, a terméklista,
 > az Allegro OAuth, az élő kategória/GTIN-felderítés és az egytermékes inaktív
-> tesztajánlat létrehozása, valamint a menthető feltöltési sablonok elkészültek.
+> tesztajánlat létrehozása, a szállítási és GPSR-adatok kezelése, valamint a
+> menthető feltöltési sablonok elkészültek.
 > A tömeges feltöltés, rendelés- és
 > számlaszinkron következő ütem.
 
