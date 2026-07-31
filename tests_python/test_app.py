@@ -241,6 +241,9 @@ class OfferPayloadTests(unittest.TestCase):
         self.product = {
             "id": 1,
             "sku": "CICA-POLO-FEKETE-M",
+            "name": "Vicces macsk\u00e1s minta",
+            "type": "polo",
+            "type_label": "P\u00f3l\u00f3",
             "title": "Vicces macskás minta Póló Fekete M",
             "description": "<p>Prémium pamut póló.</p>",
             "brand": "forme",
@@ -297,6 +300,11 @@ class OfferPayloadTests(unittest.TestCase):
         self.assertEqual("INACTIVE", payload["publication"]["status"])
         self.assertEqual("HUF", payload["sellingMode"]["price"]["currency"])
         self.assertEqual("CICA-POLO-FEKETE-M", payload["external"]["id"])
+        self.assertEqual("Vicces macsk\u00e1s minta P\u00f3l\u00f3", payload["name"])
+        self.assertEqual(
+            "Vicces macsk\u00e1s minta P\u00f3l\u00f3 Fekete M",
+            payload["productSet"][0]["product"]["name"],
+        )
         self.assertEqual([{"id": "brand", "valuesIds": ["brand_forme"]}], payload["productSet"][0]["product"]["parameters"])
         self.assertEqual([{"id": "condition", "valuesIds": ["new"]}], payload["parameters"])
         self.assertEqual("rate-1", payload["delivery"]["shippingRates"]["id"])

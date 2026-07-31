@@ -74,6 +74,10 @@ terméknevéből, az olvasható típusnévből és a színből képezi az érté
 méretet kihagyja, így egy szín teljes méretsora azonos modellt kap; a gyártói
 kód ettől függetlenül továbbra is a méretenkénti SKU.
 
+A vásárló által látott ajánlatcím csak a közös terméknevet és a pólótípust
+tartalmazza. A szín és a méret külön termékparaméter marad; a háttérben
+létrehozott katalógustermék változatneve továbbra is azonosítja ezeket.
+
 ### Temu rendelés és számlázás
 
 A Temu platformra váltva a **Rendelések** képernyő az EU Open Platform

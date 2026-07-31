@@ -210,6 +210,21 @@ def product_model_name(product: dict, max_length: int = 50) -> str:
     return model[:max_length].rstrip()
 
 
+def product_offer_name(product: dict, max_length: int = 75) -> str:
+    name = re.sub(r"\s+", " ", str(product.get("name", ""))).strip()
+    type_label = re.sub(
+        r"\s+", " ", str(product.get("type_label") or product.get("type", "")).replace("-", " ").replace("_", " ")
+    ).strip()
+    if type_label and _fold(type_label) not in _fold(name):
+        name = " ".join(part for part in (name, type_label) if part)
+    if len(name) <= max_length:
+        return name
+    shortened = name[:max_length]
+    if not shortened.endswith(" ") and not name[max_length].isspace() and " " in shortened:
+        shortened = shortened.rsplit(" ", 1)[0]
+    return shortened.rstrip()
+
+
 def suggested_parameter_value(parameter: dict, product: dict) -> str:
     default = DEFAULT_PARAMETER_VALUES.get(str(parameter.get("id", "")))
     if default:
@@ -390,9 +405,14 @@ def build_offer_payload(
     person_id = (responsible_person_id or "").strip()
     if person_id:
         product_set_item["responsiblePerson"] = {"id": person_id}
+    offer_name = product_offer_name(product)
+    if len(offer_name) < 12 or len(offer_name.split()) < 3:
+        raise ValueError(
+            "A szín és méret nélküli ajánlatcím legalább 12 karakter és 3 szó legyen."
+        )
     payload: dict[str, Any] = {
         "productSet": [product_set_item],
-        "name": str(product["title"])[:75],
+        "name": offer_name,
         "category": {"id": str(category["id"])},
         "parameters": offer_parameters,
         "sellingMode": {
