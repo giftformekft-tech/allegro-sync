@@ -81,6 +81,9 @@ a kupon platform által térített része külön, egyértelmű megnevezést kap
 A kiállítás előtt kötelező beállítani egy nyilvános HTTPS alapcímet. A Temu
 erről a futó alkalmazásról tölti le a tokennel védett PDF-et, majd a program
 a `temu.pay.tax.merchant.upload.invoice` végponttal a rendeléshez kapcsolja.
+A platform nevét és nyers címét a Temu API adja. Az alkalmazás az egyértelmű
+címrészeket felbontja, az eredeti címet megmutatja az előnézetben, és az adott
+API-címet egyszer jóvá kell hagyni; címváltozáskor újból ellenőrzést kér.
 A folyamat külön `temu_order_invoices` táblát és külön Temu számlaelőtagot
 használ, ezért nem ütközik sem az Allegro számlázásával, sem a régi Temu
 CSV/XLSX exporttal. Jóváíró bizonylat és nem HUF-os rendelés csak külön

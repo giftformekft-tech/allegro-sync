@@ -316,11 +316,17 @@ async function previewTemuInvoices(orderId){
       const buyer=doc.buyer||{};const items=(doc.items||[]).map(item=>`${escapeHtml(item.name)} · ${escapeHtml(item.gross)} ${escapeHtml(doc.currency)}`).join('<br>');
       const problems=(doc.problems||[]).length?`<small class="problem-list">${doc.problems.map(escapeHtml).join('<br>')}</small>`:'<small>Az API-adatok teljesek, kiállítható.</small>';
       const state=doc.status==='uploaded'?' · már feltöltve':doc.invoice_number?` · ${escapeHtml(doc.invoice_number)}`:'';
-      return `<div><b>${String(index+1).padStart(2,'0')}</b><span><strong>${escapeHtml(doc.recipient_label)} · ${escapeHtml(doc.total)} ${escapeHtml(doc.currency)}${state}</strong><small>${escapeHtml(buyer.name||'—')} · ${escapeHtml(buyer.email||'nincs e-mail')}</small>${items?`<small>${items}</small>`:''}${problems}</span></div>`;
+      const apiAddress=buyer.api_address?`<small><strong>Temu API-cím:</strong> ${escapeHtml(buyer.api_address)}</small>${buyer.api_address_approved?'<small class="badge good">Cím jóváhagyva</small>':`<button class="secondary" data-approve-temu-platform="${escapeHtml(orderId)}">API-cím ellenőrizve, jóváhagyom</button>`}`:'';
+      return `<div><b>${String(index+1).padStart(2,'0')}</b><span><strong>${escapeHtml(doc.recipient_label)} · ${escapeHtml(doc.total)} ${escapeHtml(doc.currency)}${state}</strong><small>${escapeHtml(buyer.name||'—')} · ${escapeHtml(buyer.email||'nincs e-mail')}</small>${apiAddress}${items?`<small>${items}</small>`:''}${problems}</span></div>`;
     }).join('');
     const create=$('#createTemuInvoices');create.disabled=!documents.length||documents.some(doc=>!doc.ready)||documents.every(doc=>doc.status==='uploaded');create.dataset.orderId=orderId;
     $('#temuInvoicePreview').classList.remove('hidden');$('#temuInvoicePreview').scrollIntoView({behavior:'smooth',block:'start'});
   }catch(error){toast(error.message,'error')}
+}
+async function approveTemuPlatformAddress(orderId,button){
+  if(!confirm('Ellenőrizted, hogy a Temu API által küldött platformcím megegyezik a szerződéses számlázási címmel?'))return;
+  button.disabled=true;
+  try{await api(`/api/temu/orders/${encodeURIComponent(orderId)}/platform-address/approve`,{method:'POST',body:'{}'});toast('A Temu platformcímét elmentettem és jóváhagytam.','success');await previewTemuInvoices(orderId)}catch(error){toast(error.message,'error')}finally{button.disabled=false}
 }
 async function createTemuInvoices(){
   const button=$('#createTemuInvoices');const orderId=button.dataset.orderId||selectedTemuInvoiceOrder;if(!orderId)return;
@@ -348,7 +354,7 @@ async function pollLogin(code){try{const data=await api('/api/auth/device/poll',
 
 document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}const invoice=event.target.closest('[data-invoice-order]');if(invoice)createInvoice(invoice.dataset.invoiceOrder,invoice);const temuRefresh=event.target.closest('[data-temu-refresh]');if(temuRefresh)refreshTemuUpload(temuRefresh.dataset.temuRefresh)});
 document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters()});
-document.addEventListener('click',event=>{const preview=event.target.closest('[data-temu-invoice-preview]');if(preview)previewTemuInvoices(preview.dataset.temuInvoicePreview)});
+document.addEventListener('click',event=>{const preview=event.target.closest('[data-temu-invoice-preview]');if(preview)previewTemuInvoices(preview.dataset.temuInvoicePreview);const approve=event.target.closest('[data-approve-temu-platform]');if(approve)approveTemuPlatformAddress(approve.dataset.approveTemuPlatform,approve)});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 $('#platformSelect').addEventListener('change',event=>setPlatform(event.target.value));

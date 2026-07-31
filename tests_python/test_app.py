@@ -37,6 +37,7 @@ from allegro_app.temu_invoices import (
     TEMU_ORDER_LIST,
     TEMU_ORDER_SHIPPING,
     TemuInvoiceService,
+    _platform_address_parts,
 )
 
 
@@ -634,6 +635,35 @@ class TemuInvoiceTests(unittest.TestCase):
         self.assertEqual("Pamut póló", root.findtext("s:tetelek/s:tetel/s:megnevezes", namespaces=ns))
         self.assertEqual("12700.00", root.findtext("s:tetelek/s:tetel/s:bruttoErtek", namespaces=ns))
         self.assertEqual("true", root.findtext("s:vevo/s:sendEmail", namespaces=ns))
+
+    def test_platform_address_is_conservatively_split(self) -> None:
+        self.assertEqual(
+            {"street": "25 Sample Street", "city": "Dublin", "zip": "D02 XF99", "country": "Ireland"},
+            _platform_address_parts("25 Sample Street, Dublin, D02 XF99, Ireland"),
+        )
+
+    def test_platform_address_approval_is_bound_to_api_value(self) -> None:
+        class Temu:
+            @staticmethod
+            def _result(response: dict) -> dict:
+                return response["result"]
+
+            @staticmethod
+            def request(api_type: str, parameters: dict | None = None) -> dict:
+                return {"result": {"invoiceDetailInfoList": [{"platformInfo": {
+                    "platformName": "Temu", "platformAddress": "25 Sample Street, Dublin, D02 XF99, Ireland"
+                }}]}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = AppConfig(root, {})
+            service = TemuInvoiceService(config, Database(root / "state.sqlite"), Temu())  # type: ignore[arg-type]
+            service.approve_platform_address("PO-123456")
+            buyer = service._platform({"platformInfo": {
+                "platformName": "Temu", "platformAddress": "25 Sample Street, Dublin, D02 XF99, Ireland"
+            }})
+            self.assertTrue(buyer["api_address_approved"])
+            self.assertEqual("Dublin", buyer["city"])
 
     def test_temu_invoice_uses_api_description_and_is_idempotent(self) -> None:
         class Temu:

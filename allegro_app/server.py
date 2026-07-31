@@ -239,6 +239,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.path.removeprefix("/api/temu/orders/").removesuffix("/invoices").strip("/")
                 )
                 self._json(self.app.temu_invoices.create_and_upload(order_id), HTTPStatus.CREATED)
+            elif self.path.startswith("/api/temu/orders/") and self.path.endswith("/platform-address/approve"):
+                order_id = urllib.parse.unquote(
+                    self.path.removeprefix("/api/temu/orders/").removesuffix("/platform-address/approve").strip("/")
+                )
+                self._json(self.app.temu_invoices.approve_platform_address(order_id))
             elif self.path == "/api/auth/device/start":
                 self._json(self.app.auth.start_device_flow())
             elif self.path == "/api/auth/device/poll":

@@ -63,6 +63,39 @@ def _timestamp_date(value: object) -> str:
     return datetime.fromtimestamp(milliseconds / 1000, tz=timezone.utc).date().isoformat()
 
 
+def _platform_address_parts(value: object) -> dict[str, str]:
+    """Create conservative structured suggestions from Temu's one-line address."""
+    raw = str(value or "").strip()
+    parts = [part.strip() for part in re.split(r"[,;\n]+", raw) if part.strip()]
+    result = {"country": "", "zip": "", "city": "", "street": ""}
+    if len(parts) < 2:
+        result["street"] = raw
+        return result
+
+    result["country"] = parts[-1]
+    middle = parts[1:-1]
+    result["street"] = parts[0]
+    postal_city = re.compile(r"^([A-Z]{1,2}-?\d{3,6}|\d{4,6}|[A-Z]\d[A-Z][ -]?\d[A-Z]\d)\s+(.+)$", re.I)
+    if middle:
+        match = postal_city.match(middle[-1])
+        if match:
+            result["zip"], result["city"] = match.group(1), match.group(2)
+            if len(middle) > 1:
+                result["street"] = ", ".join(parts[:1] + middle[:-1])
+        elif len(middle) >= 2:
+            postcode = middle[-1]
+            if re.fullmatch(r"[A-Z0-9][A-Z0-9 -]{2,9}", postcode, re.I) and any(char.isdigit() for char in postcode):
+                result["zip"] = postcode
+                result["city"] = middle[-2]
+                result["street"] = ", ".join(parts[:1] + middle[:-2]) or parts[0]
+            else:
+                result["city"] = middle[-1]
+                result["street"] = ", ".join(parts[:1] + middle[:-1]) or parts[0]
+        else:
+            result["city"] = middle[0]
+    return result
+
+
 class TemuInvoiceService:
     def __init__(self, config: AppConfig, database: Database, temu: TemuClient):
         self.config = config
@@ -154,17 +187,41 @@ class TemuInvoiceService:
             "email": str(shipping.get("mail", "")).strip(),
         }
 
-    def _platform(self, info: dict) -> dict[str, str]:
+    def _platform(self, info: dict) -> dict[str, object]:
         platform = info.get("platformInfo") if isinstance(info.get("platformInfo"), dict) else {}
+        raw_address = str(platform.get("platformAddress", "")).strip()
+        suggested = _platform_address_parts(raw_address)
         return {
             "name": str(platform.get("platformName") or self.config.values.get("TEMU_PLATFORM_NAME", "")).strip(),
-            "country": self.config.values.get("TEMU_PLATFORM_COUNTRY", "").strip(),
-            "zip": self.config.values.get("TEMU_PLATFORM_ZIP", "").strip(),
-            "city": self.config.values.get("TEMU_PLATFORM_CITY", "").strip(),
-            "street": self.config.values.get("TEMU_PLATFORM_STREET", "").strip(),
+            "country": self.config.values.get("TEMU_PLATFORM_COUNTRY", "").strip() or suggested["country"],
+            "zip": self.config.values.get("TEMU_PLATFORM_ZIP", "").strip() or suggested["zip"],
+            "city": self.config.values.get("TEMU_PLATFORM_CITY", "").strip() or suggested["city"],
+            "street": self.config.values.get("TEMU_PLATFORM_STREET", "").strip() or suggested["street"],
             "tax_id": self.config.values.get("TEMU_PLATFORM_TAX_ID", "").strip(),
             "email": self.config.values.get("TEMU_PLATFORM_EMAIL", "").strip(),
+            "api_address": raw_address,
+            "api_address_approved": bool(raw_address) and raw_address == self.config.values.get("TEMU_PLATFORM_APPROVED_ADDRESS", "").strip(),
         }
+
+    def approve_platform_address(self, parent_order_sn: str) -> dict:
+        order_id = self._order_id(parent_order_sn)
+        details = self.temu._result(self.temu.request(
+            TEMU_INVOICE_DETAIL, {"request": {"parentOrderSn": order_id}}
+        ))
+        rows = details.get("invoiceDetailInfoList") if isinstance(details.get("invoiceDetailInfoList"), list) else []
+        addresses: list[str] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            platform = row.get("platformInfo") if isinstance(row.get("platformInfo"), dict) else {}
+            address = str(platform.get("platformAddress", "")).strip()
+            if address and address not in addresses:
+                addresses.append(address)
+        if len(addresses) != 1:
+            raise InvoiceError("A Temu nem adott egyértelműen jóváhagyható platformcímet ehhez a rendeléshez.")
+        self.config.save({"TEMU_PLATFORM_APPROVED_ADDRESS": addresses[0]})
+        self.database.add_activity("settings", f"Temu platformcím jóváhagyva: {order_id}")
+        return {"ok": True, "parent_order_sn": order_id, "suggested": _platform_address_parts(addresses[0])}
 
     @staticmethod
     def _row_item(row: dict, fallback_name: str) -> dict:
@@ -205,6 +262,8 @@ class TemuInvoiceService:
                 problems.append(f"Hiányzik a címzett {label} mezője.")
         if recipient_type == 2 and not buyer.get("tax_id"):
             problems.append("Hiányzik a Temu platform adószáma a beállításokból.")
+        if recipient_type == 2 and not buyer.get("api_address_approved"):
+            problems.append("A Temu API platformcímét egyszer ellenőrizni és jóváhagyni kell.")
         if direction == 2:
             problems.append("A jóváíró számla automatikus kiállítása még nincs engedélyezve.")
         if currency != "HUF":
