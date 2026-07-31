@@ -289,6 +289,43 @@ def parameter_is_required(parameter: dict, selections: dict[str, Any]) -> bool:
     return True
 
 
+def resolve_dependent_dictionary_selections(
+    category: dict, selections: dict[str, Any]
+) -> dict[str, Any]:
+    """Replace an invalid dependent dictionary value when Allegro allows exactly one."""
+    resolved = dict(selections)
+    for parameter in category.get("parameters", []):
+        if parameter.get("type") != "dictionary":
+            continue
+        options = parameter.get("options") if isinstance(parameter.get("options"), dict) else {}
+        dependency_id = str(options.get("dependsOnParameterId") or "")
+        parameter_id = str(parameter.get("id", ""))
+        selected_value = str(resolved.get(parameter_id, ""))
+        dependency_value = str(resolved.get(dependency_id, ""))
+        if not dependency_id or not selected_value or not dependency_value:
+            continue
+        dictionary = [item for item in parameter.get("dictionary", []) if isinstance(item, dict)]
+        selected_item = next(
+            (item for item in dictionary if str(item.get("id", "")) == selected_value), None
+        )
+        if selected_item is None:
+            continue
+        selected_dependencies = {
+            str(value) for value in selected_item.get("dependsOnValueIds", [])
+        }
+        if not selected_dependencies or dependency_value in selected_dependencies:
+            continue
+        allowed = [
+            item for item in dictionary
+            if dependency_value in {
+                str(value) for value in item.get("dependsOnValueIds", [])
+            }
+        ]
+        if len(allowed) == 1:
+            resolved[parameter_id] = str(allowed[0].get("id", ""))
+    return resolved
+
+
 def _description(value: str) -> dict:
     content = sanitize_description_html(value.strip())
     if not content:
@@ -321,6 +358,7 @@ def build_offer_payload(
         raise ValueError("Ebben a kategóriában nem engedélyezett a katalógustermékes ajánlat.")
     if not category.get("product_creation_enabled"):
         raise ValueError("Ebben a kategóriában nem engedélyezett saját katalógustermék létrehozása.")
+    selections = resolve_dependent_dictionary_selections(category, selections)
     gtin_parameters = [parameter for parameter in category.get("parameters", []) if parameter.get("is_gtin")]
     provided_gtin = any(str(selections.get(str(parameter.get("id")), "")).strip() for parameter in gtin_parameters)
     gtin_required = any(parameter_is_required(parameter, selections) for parameter in gtin_parameters)

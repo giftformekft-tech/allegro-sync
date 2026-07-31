@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from allegro_app.offers import OfferService
+from allegro_app.offers import OfferService, resolve_dependent_dictionary_selections
 
 
 class FakeClient:
@@ -57,6 +57,44 @@ class TaxSettingsTest(unittest.TestCase):
         settings = service.tax_settings("87913", "HU")
 
         self.assertEqual("legacy-id", service.default_tax_setting_id(settings))
+
+
+class DependentParametersTest(unittest.TestCase):
+    CATEGORY = {
+        "parameters": [{
+            "id": "216925",
+            "type": "dictionary",
+            "options": {"dependsOnParameterId": "54"},
+            "dictionary": [
+                {
+                    "id": "216925_1191143",
+                    "value": "klasszikus",
+                    "dependsOnValueIds": ["54_4"],
+                },
+                {
+                    "id": "216925_275825",
+                    "value": "plus size (nagy méretek)",
+                    "dependsOnValueIds": ["54_8"],
+                },
+            ],
+        }],
+    }
+
+    def test_3xl_changes_classic_family_to_the_only_allowed_plus_size_value(self) -> None:
+        resolved = resolve_dependent_dictionary_selections(self.CATEGORY, {
+            "54": "54_8",
+            "216925": "216925_1191143",
+        })
+
+        self.assertEqual("216925_275825", resolved["216925"])
+
+    def test_regular_size_keeps_the_template_family(self) -> None:
+        resolved = resolve_dependent_dictionary_selections(self.CATEGORY, {
+            "54": "54_4",
+            "216925": "216925_1191143",
+        })
+
+        self.assertEqual("216925_1191143", resolved["216925"])
 
 
 if __name__ == "__main__":
