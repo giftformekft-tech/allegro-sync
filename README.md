@@ -105,6 +105,13 @@ Express One API-ból kérhető le. Ha a címke létrejött, de a Temu visszaír�
 hibázik, az újrapróbálás a mentett csomagszámot használja, így nem keletkezik
 második Express One csomag.
 
+Tömeges munkához a rendeléstábla sorai kijelölhetők. A **Kijelöltek
+feladása** rendelésenként biztonságosan létrehozza és visszaírja a csomagot,
+majd siker/hiba bontást mutat; egy hibás rendelés nem állítja le a többit.
+A már címkével rendelkező kijelölt sorokhoz a **Kijelölt címkék nyomtatása**
+az Express One `parcel_label/get_selected_parcel_labels` végpontjáról egyetlen
+közös A4 PDF-et nyit meg.
+
 Automata tesztek:
 
 ```powershell

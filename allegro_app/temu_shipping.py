@@ -216,13 +216,7 @@ class TemuShippingService:
         )
 
     @staticmethod
-    def _extract_label(response: dict[str, Any]) -> tuple[str, bytes]:
-        parcel_value = _first_recursive(response, ("parcel_numbers", "parcelNumbers", "parcel_number", "parcelNumber"))
-        if isinstance(parcel_value, list):
-            parcel_value = parcel_value[0] if parcel_value else ""
-        if isinstance(parcel_value, dict):
-            parcel_value = next(iter(parcel_value.values()), "")
-        parcel_number = str(parcel_value or "").strip()
+    def _extract_pdf(response: dict[str, Any]) -> bytes:
         encoded: object | None = None
         for row in _walk_dicts(response):
             labels = row.get("labels")
@@ -235,10 +229,10 @@ class TemuShippingService:
                     break
             if encoded is not None:
                 break
-        if not parcel_number or not isinstance(encoded, str):
+        if not isinstance(encoded, str):
             message = _first_recursive(response, ("message", "error_messages", "error_message"))
             raise ExpressOneError(
-                f"Az Express One válaszából hiányzik a csomagszám vagy a PDF-címke. {message or ''}".strip()
+                f"Az Express One válaszából hiányzik a PDF-címke. {message or ''}".strip()
             )
         try:
             label = base64.b64decode(re.sub(r"\s+", "", encoded), validate=True)
@@ -246,7 +240,33 @@ class TemuShippingService:
             raise ExpressOneError("Az Express One hibás Base64 PDF-címkét adott vissza.") from exc
         if not label.startswith(b"%PDF"):
             raise ExpressOneError("Az Express One válaszában kapott címke nem PDF.")
+        return label
+
+    @classmethod
+    def _extract_label(cls, response: dict[str, Any]) -> tuple[str, bytes]:
+        parcel_value = _first_recursive(response, ("parcel_numbers", "parcelNumbers", "parcel_number", "parcelNumber"))
+        if isinstance(parcel_value, list):
+            parcel_value = parcel_value[0] if parcel_value else ""
+        if isinstance(parcel_value, dict):
+            parcel_value = next(iter(parcel_value.values()), "")
+        parcel_number = str(parcel_value or "").strip()
+        if not parcel_number:
+            message = _first_recursive(response, ("message", "error_messages", "error_message"))
+            raise ExpressOneError(
+                f"Az Express One válaszából hiányzik a csomagszám. {message or ''}".strip()
+            )
+        label = cls._extract_pdf(response)
         return parcel_number, label
+
+    def _order_ids(self, values: object) -> list[str]:
+        if not isinstance(values, list):
+            raise TemuShippingError("A kijelölt rendelések listája érvénytelen.")
+        order_ids = list(dict.fromkeys(self._order_id(str(value)) for value in values))
+        if not order_ids:
+            raise TemuShippingError("Jelölj ki legalább egy Temu-rendelést.")
+        if len(order_ids) > 50:
+            raise TemuShippingError("Egyszerre legfeljebb 50 Temu-rendelés dolgozható fel.")
+        return order_ids
 
     @staticmethod
     def _confirm_payload(order_id: str, rows: list[dict[str, Any]], carrier_id: str, tracking: str) -> dict[str, Any]:
@@ -337,6 +357,51 @@ class TemuShippingService:
             raise
         self.database.add_activity("shipping", f"Temu rendelés feladva Express One-nal: {order_id} · {parcel_number}")
         return saved
+
+    def create_bulk(self, order_values: object, weight_kg: object, confirmation: str) -> dict[str, Any]:
+        order_ids = self._order_ids(order_values)
+        if confirmation.strip().upper() != "FELADÁS":
+            raise TemuShippingError("A tömeges feladáshoz írd be pontosan: FELADÁS")
+        results: list[dict[str, Any]] = []
+        for order_id in order_ids:
+            try:
+                shipment = self.create(order_id, weight_kg, confirmation)
+                results.append({
+                    "parent_order_sn": order_id, "ok": True,
+                    "status": shipment.get("status"), "parcel_number": shipment.get("parcel_number"),
+                })
+            except Exception as exc:
+                results.append({"parent_order_sn": order_id, "ok": False, "error": str(exc)[:1000]})
+        success_count = sum(1 for row in results if row["ok"])
+        if success_count:
+            self.database.add_activity(
+                "shipping", f"Temu tömeges Express One feladás: {success_count}/{len(results)} rendelés sikeres."
+            )
+        return {
+            "ok": success_count == len(results), "total": len(results),
+            "success_count": success_count, "error_count": len(results) - success_count,
+            "results": results,
+        }
+
+    def selected_labels(self, order_values: object) -> tuple[str, bytes]:
+        order_ids = self._order_ids(order_values)
+        parcel_numbers: list[str] = []
+        missing: list[str] = []
+        for order_id in order_ids:
+            shipment = self.database.get_temu_shipment(order_id)
+            parcel_number = str(shipment.get("parcel_number", "")) if shipment else ""
+            if parcel_number:
+                parcel_numbers.append(parcel_number)
+            else:
+                missing.append(order_id)
+        if missing:
+            raise TemuShippingError(
+                "Nincs még címkéje ezeknek a rendeléseknek: " + ", ".join(missing)
+            )
+        response = self.express_one.get_selected_labels(parcel_numbers)
+        pdf = self._extract_pdf(response)
+        filename = f"express-one-temu-{datetime.now(ZoneInfo('Europe/Budapest')).strftime('%Y%m%d-%H%M')}.pdf"
+        return filename, pdf
 
     def refresh_tracking(self, parent_order_sn: str) -> dict[str, Any]:
         order_id = self._order_id(parent_order_sn)

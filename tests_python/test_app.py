@@ -782,6 +782,12 @@ class TemuShippingTests(unittest.TestCase):
             def parcel_status(parcel_number: str) -> dict:
                 return {"response": {"state": "Kézbesítés alatt", "parcel_number": parcel_number}}
 
+            def get_selected_labels(self, parcel_numbers: list[str]) -> dict:
+                self.selected = parcel_numbers
+                return {"response": {"labels": {
+                    "data": base64.b64encode(b"%PDF-1.4 combined").decode()
+                }}}
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = AppConfig(root, {"EXPRESS_ONE_DEFAULT_WEIGHT_KG": "0.4"})
@@ -805,6 +811,10 @@ class TemuShippingTests(unittest.TestCase):
             self.assertEqual(2, sent["orderSendInfoList"][0]["quantity"])
             self.assertTrue(Path(str(result["label_path"])).is_file())
             self.assertEqual("Kézbesítés alatt", service.refresh_tracking("PO-211-123456")["tracking"]["response"]["state"])
+            filename, combined = service.selected_labels(["PO-211-123456"])
+            self.assertTrue(filename.startswith("express-one-temu-"))
+            self.assertEqual(b"%PDF-1.4 combined", combined)
+            self.assertEqual(["123456789"], express.selected)
 
     def test_failed_temu_confirmation_reuses_existing_label(self) -> None:
         import base64
@@ -847,6 +857,22 @@ class TemuShippingTests(unittest.TestCase):
             temu.fail = False
             self.assertEqual("temu_confirmed", service.create("PO-211-123456", 1, "FELADÁS")["status"])
             self.assertEqual(1, express.labels)
+
+    def test_bulk_shipping_keeps_per_order_results(self) -> None:
+        class BulkService(TemuShippingService):
+            def create(self, parent_order_sn: str, weight_kg: object, confirmation: str) -> dict:
+                if parent_order_sn.endswith("-2"):
+                    raise RuntimeError("hibás cím")
+                return {"status": "temu_confirmed", "parcel_number": f"EONE-{parent_order_sn[-1]}"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = BulkService(AppConfig(root, {}), Database(root / "state.sqlite"), object())  # type: ignore[arg-type]
+            result = service.create_bulk(["PO-211-1", "PO-211-2", "PO-211-3"], "1", "FELADÁS")
+            self.assertFalse(result["ok"])
+            self.assertEqual(2, result["success_count"])
+            self.assertEqual(1, result["error_count"])
+            self.assertEqual("hibás cím", result["results"][1]["error"])
 
 
 class TemuTests(unittest.TestCase):

@@ -14,6 +14,7 @@ let temuProducts = [];
 let temuVariantGroups = [];
 let selectedTemuInvoiceOrder = '';
 let selectedTemuShipmentOrder = '';
+let temuOrders = [];
 
 async function api(path, options={}) {
   const response = await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
@@ -303,7 +304,7 @@ function temuShipmentStatus(row){
 async function loadTemuOrders(){
   const refresh=$('#refreshTemuOrders');refresh.disabled=true;
   try{
-    const data=await api('/api/temu/orders');const rows=data.orders||[];
+    const data=await api('/api/temu/orders');const rows=data.orders||[];temuOrders=rows;
     $('#temuOrderEmpty').classList.toggle('hidden',rows.length>0);
     $('#temuOrderRows').innerHTML=rows.map(row=>{
       const products=(row.product_names||[]).join(', ');
@@ -311,9 +312,28 @@ async function loadTemuOrders(){
       const invoiceAction=row.status===3?'<span class="muted">Törölt rendelés</span>':`<button class="secondary" data-temu-invoice-preview="${escapeHtml(row.id)}">Számlaadatok</button>`;
       const numbers=(row.invoice_numbers||[]).join(', ');
       const error=[row.invoice_error,row.shipment_error].filter(Boolean).map(value=>`<small title="${escapeHtml(value)}">${escapeHtml(value)}</small>`).join('');
-      return `<tr><td><strong>${formatDate(row.updated_at)}</strong><small class="order-id">${escapeHtml(row.id)}</small></td><td><strong>${escapeHtml(products||'Temu termék')}</strong></td><td><strong>${formatNumber(row.item_count)} db</strong></td><td><span class="badge ${[2,4,5,41,51].includes(row.status)?'good':'neutral'}">${escapeHtml(row.status_label)}</span></td><td>${temuShipmentStatus(row)}</td><td>${temuInvoiceStatus(row)}${numbers?`<small>${escapeHtml(numbers)}</small>`:''}</td><td><div class="order-action">${shipmentAction}${invoiceAction}${error}</div></td></tr>`;
+      const selectable=row.status!==3||row.label_ready;
+      return `<tr><td><input type="checkbox" data-temu-order-select="${escapeHtml(row.id)}" aria-label="${escapeHtml(row.id)} kijelölése" ${selectable?'':'disabled'}></td><td><strong>${formatDate(row.updated_at)}</strong><small class="order-id">${escapeHtml(row.id)}</small></td><td><strong>${escapeHtml(products||'Temu termék')}</strong></td><td><strong>${formatNumber(row.item_count)} db</strong></td><td><span class="badge ${[2,4,5,41,51].includes(row.status)?'good':'neutral'}">${escapeHtml(row.status_label)}</span></td><td>${temuShipmentStatus(row)}</td><td>${temuInvoiceStatus(row)}${numbers?`<small>${escapeHtml(numbers)}</small>`:''}</td><td><div class="order-action">${shipmentAction}${invoiceAction}${error}</div></td></tr>`;
     }).join('');
-  }catch(error){$('#temuOrderRows').innerHTML='';$('#temuOrderEmpty').classList.remove('hidden');toast(error.message,'error')}finally{refresh.disabled=false}
+    $('#selectAllTemuOrders').checked=false;updateTemuBulkActions();
+  }catch(error){temuOrders=[];$('#temuOrderRows').innerHTML='';$('#temuOrderEmpty').classList.remove('hidden');updateTemuBulkActions();toast(error.message,'error')}finally{refresh.disabled=false}
+}
+function selectedTemuOrderIds(){return $$('[data-temu-order-select]:checked').map(input=>input.dataset.temuOrderSelect)}
+function updateTemuBulkActions(){
+  const selected=selectedTemuOrderIds();const selectedRows=selected.map(id=>temuOrders.find(row=>row.id===id)).filter(Boolean);
+  $('#temuSelectedCount').textContent=selected.length;$('#bulkCreateTemuShipments').disabled=!selected.length;
+  $('#printTemuLabels').disabled=!selected.length||selectedRows.some(row=>!row.label_ready);
+  const enabled=$$('[data-temu-order-select]:not(:disabled)');$('#selectAllTemuOrders').checked=enabled.length>0&&enabled.every(input=>input.checked);$('#selectAllTemuOrders').indeterminate=selected.length>0&&!$('#selectAllTemuOrders').checked;
+}
+function toggleAllTemuOrders(checked){$$('[data-temu-order-select]:not(:disabled)').forEach(input=>{input.checked=checked});updateTemuBulkActions()}
+async function bulkCreateTemuShipments(){
+  const orderIds=selectedTemuOrderIds();if(!orderIds.length)return;
+  if(!confirm(`${orderIds.length} Temu-rendeléshez készítünk Express One címkét és visszaírjuk a csomagszámokat. Folytatod?`))return;
+  const button=$('#bulkCreateTemuShipments');const original=button.textContent;button.disabled=true;button.textContent='Tömeges feladás…';
+  try{const data=await api('/api/temu/shipments/bulk',{method:'POST',body:JSON.stringify({order_ids:orderIds,weight_kg:$('#temuBulkWeight').value,confirmation:$('#temuBulkConfirmation').value})});const firstError=(data.results||[]).find(row=>!row.ok);toast(`${data.success_count}/${data.total} rendelés feladva.${firstError?` Első hiba: ${firstError.error}`:''}`,data.error_count?'error':'success');$('#temuBulkConfirmation').value='';await loadTemuOrders();loadDashboard()}catch(error){toast(error.message,'error')}finally{button.disabled=false;button.textContent=original;updateTemuBulkActions()}
+}
+function printSelectedTemuLabels(){
+  const orderIds=selectedTemuOrderIds();if(!orderIds.length)return;const params=new URLSearchParams();orderIds.forEach(id=>params.append('order_id',id));window.open(`/api/temu/shipments/labels.pdf?${params.toString()}`,'_blank','noopener');
 }
 async function previewTemuShipment(orderId){
   try{
@@ -381,7 +401,7 @@ async function startLogin(){
 async function pollLogin(code){try{const data=await api('/api/auth/device/poll',{method:'POST',body:JSON.stringify({device_code:code})});if(data.status==='authorized'){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent='Sikeresen csatlakoztatva.';toast('Az eladói fiók csatlakoztatva.','success');loadConnectionState();loadDashboard()}}catch(error){clearInterval(deviceTimer);deviceTimer=null;$('#deviceStatus').textContent=error.message;toast(error.message,'error')}}
 
 document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}const invoice=event.target.closest('[data-invoice-order]');if(invoice)createInvoice(invoice.dataset.invoiceOrder,invoice);const temuRefresh=event.target.closest('[data-temu-refresh]');if(temuRefresh)refreshTemuUpload(temuRefresh.dataset.temuRefresh)});
-document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters()});
+document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters();if(event.target.closest('[data-temu-order-select]'))updateTemuBulkActions()});
 document.addEventListener('click',event=>{const preview=event.target.closest('[data-temu-invoice-preview]');if(preview)previewTemuInvoices(preview.dataset.temuInvoicePreview);const approve=event.target.closest('[data-approve-temu-platform]');if(approve)approveTemuPlatformAddress(approve.dataset.approveTemuPlatform,approve);const shipment=event.target.closest('[data-temu-shipment-preview]');if(shipment)previewTemuShipment(shipment.dataset.temuShipmentPreview);const tracking=event.target.closest('[data-temu-tracking]');if(tracking)refreshTemuTracking(tracking.dataset.temuTracking,tracking)});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
@@ -397,4 +417,5 @@ $('#searchCategories').addEventListener('click',searchCategories);$('#categoryPh
 $('#preorder').addEventListener('change',togglePreorder);$('#responsibleProducer').addEventListener('change',updateProducerHint);
 $('#refreshOrders').addEventListener('click',loadOrders);
 $('#refreshTemuOrders').addEventListener('click',loadTemuOrders);$('#createTemuInvoices').addEventListener('click',createTemuInvoices);$('#createTemuShipment').addEventListener('click',createTemuShipment);
+$('#selectAllTemuOrders').addEventListener('change',event=>toggleAllTemuOrders(event.target.checked));$('#bulkCreateTemuShipments').addEventListener('click',bulkCreateTemuShipments);$('#printTemuLabels').addEventListener('click',printSelectedTemuLabels);
 setPlatform(activePlatform,false);navigate(location.hash.slice(1)||'dashboard');

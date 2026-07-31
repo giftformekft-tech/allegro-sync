@@ -162,6 +162,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"uploads": self.app.database.list_temu_uploads()})
             elif parsed.path == "/api/temu/orders":
                 self._json({"orders": self.app.temu_invoices.list_orders()})
+            elif parsed.path == "/api/temu/shipments/labels.pdf":
+                query = urllib.parse.parse_qs(parsed.query)
+                self._temu_bulk_label_file(query.get("order_id", []))
             elif parsed.path.startswith("/api/temu/orders/") and parsed.path.endswith("/invoice-preview"):
                 order_id = urllib.parse.unquote(
                     parsed.path.removeprefix("/api/temu/orders/").removesuffix("/invoice-preview").strip("/")
@@ -237,6 +240,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.app.temu.check_connection())
             elif self.path == "/api/express-one/check":
                 self._json(self.app.temu_shipping.check_connection())
+            elif self.path == "/api/temu/shipments/bulk":
+                self._json(self.app.temu_shipping.create_bulk(
+                    body.get("order_ids"), body.get("weight_kg"), str(body.get("confirmation", ""))
+                ), HTTPStatus.CREATED)
             elif self.path == "/api/temu/products/preview":
                 product_ids = body.get("product_ids") if isinstance(body.get("product_ids"), list) else []
                 options = body.get("options") if isinstance(body.get("options"), dict) else {}
@@ -432,6 +439,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/pdf")
         self.send_header("Content-Disposition", f'inline; filename="express-one-{order_id}.pdf"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "private, no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _temu_bulk_label_file(self, order_ids: list[str]) -> None:
+        filename, body = self.app.temu_shipping.selected_labels(order_ids)
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'inline; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "private, no-store")
         self.end_headers()

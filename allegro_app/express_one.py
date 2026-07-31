@@ -73,6 +73,19 @@ class ExpressOneClient:
             },
         })
 
+    def get_selected_labels(self, parcel_numbers: list[str]) -> dict[str, Any]:
+        if not parcel_numbers:
+            raise ExpressOneError("Nincs kijelölt Express One csomagszám.")
+        return self.request("parcel_label", "get_selected_parcel_labels", {
+            "parcel_numbers": parcel_numbers,
+            "labels": {
+                "data_type": "PDF",
+                "size": "A4",
+                "dpi": "300",
+                "pdf_etiket_position": "0",
+            },
+        })
+
     def parcel_status(self, parcel_number: str) -> dict[str, Any]:
         return self.request("tracking", "get_parcel_status", {
             "parcel_number": parcel_number,
