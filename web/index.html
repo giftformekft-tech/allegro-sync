@@ -116,6 +116,22 @@
           </article>
         </div>
         <div class="upload-wizard allegro-only">
+          <article class="card panel wizard-card bulk-offer-card">
+            <div class="wizard-heading"><span class="step-number">B</span><div><span class="kicker">IMPORTCSOMAG</span><h2>Teljes csomag tömeges feltöltése</h2><p class="muted">Válaszd ki az importált CSV-csomagot, rendelj sablont minden terméktípushoz, majd az összes variáns egyben, inaktív ajánlatként kerül az Allegróra.</p></div><span class="environment-chip" id="bulkUploadEnvironment">SANDBOX</span></div>
+            <div class="bulk-package-picker">
+              <label><span>Importcsomag</span><select id="bulkImportBatch"><option value="">Válassz importcsomagot…</option></select></label>
+              <div class="bulk-package-stats" id="bulkImportStats"><span>Válassz egy véglegesített Allegro-importot.</span></div>
+            </div>
+            <div class="bulk-template-map" id="bulkTemplateAssignments"><div class="wizard-empty">A csomag kiválasztása után itt jelennek meg a terméktípusok.</div></div>
+            <div class="bulk-actions">
+              <button class="secondary" id="previewBulkOffers">Csomag ellenőrzése</button>
+              <label><span>Megerősítés</span><input id="bulkUploadConfirmation" autocomplete="off" placeholder="Írd be: FELTÖLTÉS"></label>
+              <button class="primary danger-action" id="createBulkOffers"><svg><use href="#i-upload"/></svg>Összes variáns feltöltése</button>
+            </div>
+            <p class="setting-note">A már feltöltött SKU-kat a program automatikusan kihagyja. Egy hibás variáns nem állítja le a többi feltöltését.</p>
+            <div class="bulk-result hidden" id="bulkOfferResult"></div>
+          </article>
+
           <article class="card panel wizard-card">
             <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">KATEGÓRIA</span><h2>Pólókategória felderítése</h2><p class="muted">Az Allegro élő adataiból ellenőrizzük a GTIN-t és a kötelező paramétereket.</p></div></div>
             <div class="template-toolbar"><div><span class="template-icon"><svg><use href="#i-copy"/></svg></span><div><strong>Mentett sablonok</strong><small>A fix adatok betöltődnek, a termékhez kötött mezők frissülnek.</small></div></div><select id="offerTemplate"><option value="">Válassz sablont…</option></select><button class="secondary" id="applyTemplate">Alkalmazás</button><button class="icon-button template-delete" id="deleteTemplate" title="Sablon törlése"><svg><use href="#i-trash"/></svg></button></div>

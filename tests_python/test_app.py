@@ -11,6 +11,7 @@ from unittest.mock import patch
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
+from allegro_app.allegro import AllegroError
 from allegro_app.config import AppConfig
 from allegro_app.database import Database
 from allegro_app.importer import build_title, parse_csv
@@ -192,6 +193,21 @@ class DatabaseTests(unittest.TestCase):
             db.commit_import(temu_id)
             self.assertEqual(["TEST-POLO-S"], [row["sku"] for row in db.list_products(marketplace="allegro")])
             self.assertEqual(["TEMU-TEST-POLO-S"], [row["sku"] for row in db.list_products(marketplace="temu_api_v3")])
+
+    def test_committed_import_batch_lists_its_products_and_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "state.sqlite")
+            import_id = db.create_preview("allegro.csv", parse_csv(SAMPLE))
+            db.commit_import(import_id)
+            batch = db.list_import_batches("allegro")[0]
+            self.assertEqual(import_id, batch["id"])
+            self.assertEqual(1, batch["product_count"])
+            self.assertEqual(["polo"], batch["product_types"])
+            product = db.get_import_batch_products(import_id, "allegro")[0]
+            db.mark_offer_created(product["id"], "123", "offer-1")
+            updated = db.list_import_batches("allegro")[0]
+            self.assertEqual(0, updated["remaining_count"])
+            self.assertEqual(1, updated["uploaded_count"])
 
     def test_offer_template_can_be_saved_updated_and_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -516,6 +532,77 @@ class MarketplaceTests(unittest.TestCase):
             self.assertEqual("futár", options["shipping_rates"][0]["name"])
             self.assertEqual("Forme", options["responsible_producers"][0]["name"])
             service._validate_account_choices("allegro-hu", "rate-1", "producer-1", "")
+
+
+class BulkOfferTests(unittest.TestCase):
+    class Client:
+        def __init__(self) -> None:
+            self.posts: list[str] = []
+            self.fail_sku = "TEST-POLO-S"
+
+        def request(self, method: str, path: str, **kwargs: object) -> dict:
+            if method == "POST" and path == "/sale/product-offers":
+                body = kwargs["body"]
+                sku = str(body["external"]["id"])  # type: ignore[index]
+                self.posts.append(sku)
+                if sku == self.fail_sku:
+                    raise AllegroError("Allegro sorhiba")
+                return {"status": 201, "body": {"id": f"offer-{sku}"}, "headers": {}}
+            if path == "/me":
+                return {"body": {"baseMarketplace": {"id": "allegro-hu"}}}
+            if path == "/marketplaces":
+                return {"body": {"marketplaces": [{
+                    "id": "allegro-hu",
+                    "currencies": {"base": {"code": "HUF"}},
+                    "languages": {"offerCreation": [{"code": "hu-HU"}]},
+                }]}}
+            if path == "/sale/shipping-rates":
+                return {"body": {"shippingRates": [{"id": "rate-1"}]}}
+            if path == "/sale/responsible-producers":
+                return {"body": {"responsibleProducers": [{
+                    "id": "producer-1", "producerData": {"address": {"countryCode": "HU"}},
+                }]}}
+            if path == "/sale/responsible-persons":
+                return {"body": {"responsiblePersons": []}}
+            raise AssertionError(path)
+
+    def test_bulk_continues_after_error_and_retry_skips_successful_offer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = Database(root / "state.sqlite")
+            source = "\n".join([
+                SAMPLE.splitlines()[0],
+                SAMPLE.splitlines()[1],
+                SAMPLE.splitlines()[1].replace("TEST-POLO-S", "TEST-POLO-M", 1).replace(";S;5990", ";M;5990"),
+            ])
+            import_id = db.create_preview("ket-varians.csv", parse_csv(source))
+            db.commit_import(import_id)
+            template = db.save_offer_template("Póló sablon", "123", "Pólók", [
+                {"parameter_id": "__stock__", "mode": "product", "value": ""},
+                {"parameter_id": "__shipping_rate__", "mode": "fixed", "value": "rate-1"},
+                {"parameter_id": "__handling_time__", "mode": "fixed", "value": "PT24H"},
+                {"parameter_id": "__producer__", "mode": "fixed", "value": "producer-1"},
+                {"parameter_id": "__safety_information__", "mode": "fixed", "value": "Biztonságos használat."},
+            ])
+            category = {
+                "id": "123", "leaf": True, "offer_creation_enabled": True,
+                "product_creation_enabled": True, "parameters": [],
+            }
+            client = self.Client()
+            service = OfferService(AppConfig(root, {"ALLEGRO_LANGUAGE": "hu-HU"}), db, client)
+            assignment = {"polo": template["id"]}
+
+            preview = service.preview_bulk(import_id, assignment, lambda _: category)
+            self.assertEqual(2, preview["summary"]["ready"])
+            first = service.create_bulk(import_id, assignment, lambda _: category, "FELTÖLTÉS")
+            self.assertEqual(1, first["summary"]["created"])
+            self.assertEqual(1, first["summary"]["errors"])
+
+            client.fail_sku = ""
+            retry = service.create_bulk(import_id, assignment, lambda _: category, "FELTÖLTÉS")
+            self.assertEqual(1, retry["summary"]["created"])
+            self.assertEqual(1, retry["summary"]["skipped"])
+            self.assertEqual(3, len(client.posts))
 
 
 class InvoiceTests(unittest.TestCase):

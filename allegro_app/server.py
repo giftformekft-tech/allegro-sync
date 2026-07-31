@@ -130,6 +130,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"products": self.app.database.list_products(
                     query.get("q", [""])[0], query.get("marketplace", [""])[0]
                 )})
+            elif parsed.path == "/api/imports":
+                query = urllib.parse.parse_qs(parsed.query)
+                self._json({"imports": self.app.database.list_import_batches(
+                    query.get("marketplace", ["allegro"])[0]
+                )})
+            elif parsed.path.startswith("/api/imports/") and parsed.path.endswith("/products"):
+                import_id = int(
+                    parsed.path.removeprefix("/api/imports/").removesuffix("/products").strip("/")
+                )
+                query = urllib.parse.parse_qs(parsed.query)
+                products = self.app.database.get_import_batch_products(
+                    import_id, query.get("marketplace", ["allegro"])[0]
+                )
+                self._json({"import_id": import_id, "products": products})
             elif parsed.path == "/api/templates":
                 self._json({"templates": self.app.database.list_offer_templates()})
             elif parsed.path == "/api/categories/suggest":
@@ -309,6 +323,26 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("responsible_person_id", "")), str(body.get("safety_information", "")),
                 )
                 self._json(result)
+            elif self.path == "/api/offers/bulk-preview":
+                assignments = (
+                    body.get("template_assignments")
+                    if isinstance(body.get("template_assignments"), dict)
+                    else {}
+                )
+                self._json(self.app.offers.preview_bulk(
+                    int(body.get("import_id", 0)), assignments, self.app.catalog.inspect
+                ))
+            elif self.path == "/api/offers/bulk-create":
+                assignments = (
+                    body.get("template_assignments")
+                    if isinstance(body.get("template_assignments"), dict)
+                    else {}
+                )
+                result = self.app.offers.create_bulk(
+                    int(body.get("import_id", 0)), assignments, self.app.catalog.inspect,
+                    str(body.get("confirmation", "")),
+                )
+                self._json(result, HTTPStatus.CREATED)
             elif self.path.startswith("/api/orders/") and self.path.endswith("/invoice"):
                 order_id = urllib.parse.unquote(
                     self.path.removeprefix("/api/orders/").removesuffix("/invoice").strip("/")

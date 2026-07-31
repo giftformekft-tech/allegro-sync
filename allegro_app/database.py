@@ -319,6 +319,74 @@ class Database:
                 rows = db.execute("SELECT * FROM products ORDER BY updated_at DESC LIMIT 250").fetchall()
         return [dict(row) for row in rows]
 
+    def list_import_batches(self, marketplace: str = "allegro") -> list[dict[str, Any]]:
+        """Return committed imports with their current product/upload state."""
+        with self.connect() as db:
+            batches = db.execute(
+                "SELECT * FROM import_batches WHERE status = 'committed' ORDER BY id DESC LIMIT 50"
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for batch in batches:
+                rows = db.execute(
+                    """SELECT ir.sku, ir.payload, p.status, p.allegro_offer_id
+                    FROM import_rows ir
+                    JOIN products p ON p.sku = ir.sku
+                    WHERE ir.import_id = ? AND ir.valid = 1 AND p.marketplace = ?""",
+                    (batch["id"], marketplace),
+                ).fetchall()
+                if not rows:
+                    continue
+                unique_rows = {str(row["sku"]): row for row in rows}
+                item = dict(batch)
+                item["product_count"] = len(unique_rows)
+                item["uploaded_count"] = sum(
+                    1 for row in unique_rows.values()
+                    if row["allegro_offer_id"] or row["status"] == "inactive"
+                )
+                item["remaining_count"] = item["product_count"] - item["uploaded_count"]
+                item["product_types"] = sorted({
+                    str(json.loads(row["payload"]).get("type", "")) for row in unique_rows.values()
+                })
+                result.append(item)
+        return result
+
+    def get_import_batch_products(
+        self, import_id: int, marketplace: str = "allegro"
+    ) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            batch = db.execute(
+                "SELECT id, filename, status FROM import_batches WHERE id = ?", (import_id,)
+            ).fetchone()
+            if batch is None or batch["status"] != "committed":
+                raise ValueError("A kiválasztott, véglegesített importcsomag nem található.")
+            rows = db.execute(
+                """SELECT p.id AS product_id, p.status, p.category_id, p.allegro_offer_id,
+                    ir.payload, ir.line_number
+                FROM import_rows ir
+                JOIN products p ON p.sku = ir.sku
+                WHERE ir.import_id = ? AND ir.valid = 1 AND p.marketplace = ?
+                ORDER BY ir.line_number, p.id""",
+                (import_id, marketplace),
+            ).fetchall()
+        products: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for row in rows:
+            product_id = int(row["product_id"])
+            if product_id not in seen:
+                seen.add(product_id)
+                product = json.loads(row["payload"])
+                product.update({
+                    "id": product_id,
+                    "status": row["status"],
+                    "category_id": row["category_id"],
+                    "allegro_offer_id": row["allegro_offer_id"],
+                    "line_number": row["line_number"],
+                })
+                products.append(product)
+        if not products:
+            raise ValueError("Ebben az importcsomagban nincs Allegro-termék.")
+        return products
+
     def get_product(self, product_id: int) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
@@ -431,6 +499,15 @@ class Database:
             item = dict(row)
             item["rules"] = json.loads(item["rules"])
             result.append(item)
+        return result
+
+    def get_offer_template(self, template_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM offer_templates WHERE id = ?", (template_id,)).fetchone()
+        if row is None:
+            raise ValueError("A kiválasztott feltöltési sablon nem található.")
+        result = dict(row)
+        result["rules"] = json.loads(result["rules"])
         return result
 
     def save_offer_template(

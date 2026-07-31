@@ -6,7 +6,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Callable
 
 from .allegro import AllegroClient, AllegroError
 from .config import AppConfig
@@ -525,12 +525,7 @@ class OfferService:
             responsible_person_id, safety_information,
         )
         response = self.client.request("POST", "/sale/product-offers", body=preview["payload"])
-        body = response["body"] if isinstance(response["body"], dict) else {}
-        offer_id = str(body.get("id", "")) or None
-        if not offer_id:
-            location = response["headers"].get("location", "")
-            match = re.search(r"/product-offers/([^/]+)", location)
-            offer_id = match.group(1) if match else None
+        offer_id = self._offer_id(response)
         self.database.mark_offer_created(product_id, str(category["id"]), offer_id)
         return {
             "ok": True,
@@ -539,4 +534,187 @@ class OfferService:
             "publication": "INACTIVE",
             "operation": response["headers"].get("location"),
             "marketplace": preview["marketplace"],
+        }
+
+    @staticmethod
+    def _offer_id(response: dict) -> str | None:
+        body = response["body"] if isinstance(response["body"], dict) else {}
+        offer_id = str(body.get("id", "")) or None
+        if not offer_id:
+            location = response["headers"].get("location", "")
+            match = re.search(r"/product-offers/([^/]+)", location)
+            offer_id = match.group(1) if match else None
+        return offer_id
+
+    @staticmethod
+    def _bulk_result(product: dict, state: str, message: str = "") -> dict:
+        return {
+            "product_id": int(product["id"]),
+            "sku": str(product["sku"]),
+            "title": str(product["title"]),
+            "type": str(product["type"]),
+            "color": str(product["color"]),
+            "size": str(product["size"]),
+            "state": state,
+            "message": message,
+        }
+
+    def _prepare_bulk(
+        self,
+        import_id: int,
+        template_assignments: dict[str, Any],
+        category_lookup: Callable[[str], dict],
+    ) -> tuple[dict, list[dict]]:
+        products = self.database.get_import_batch_products(import_id, "allegro")
+        product_types = sorted({str(product["type"]) for product in products})
+        missing_types = [item for item in product_types if not template_assignments.get(item)]
+        if missing_types:
+            raise ValueError("Nincs sablon hozzárendelve ezekhez a típusokhoz: " + ", ".join(missing_types))
+
+        marketplace = self.marketplace()
+        if marketplace["currency"] != "HUF":
+            raise ValueError(
+                f"A tömeges import HUF árakat tartalmaz, de a fiók alappénzneme {marketplace['currency']}."
+            )
+
+        contexts: dict[str, tuple[dict, dict, dict[str, dict[str, str]]]] = {}
+        validated_choices: set[tuple[str, str, str]] = set()
+        for product_type in product_types:
+            try:
+                template_id = int(template_assignments[product_type])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Érvénytelen sablonazonosító ehhez: {product_type}") from exc
+            template = self.database.get_offer_template(template_id)
+            category = category_lookup(str(template["category_id"]))
+            rules = {
+                str(rule.get("parameter_id")): rule
+                for rule in template.get("rules", [])
+                if isinstance(rule, dict) and rule.get("parameter_id")
+            }
+            preorder = rules.get("__preorder__", {}).get("value", "false").lower() == "true"
+            if preorder:
+                raise ValueError(
+                    f"A(z) {template['name']} sablon előrendelést kér, de nincs benne feladási dátum. "
+                    "Ehhez használd az egyedi feltöltést."
+                )
+            shipping_rate_id = str(rules.get("__shipping_rate__", {}).get("value", ""))
+            producer_id = str(rules.get("__producer__", {}).get("value", ""))
+            person_id = str(rules.get("__responsible_person__", {}).get("value", ""))
+            choice = (shipping_rate_id, producer_id, person_id)
+            if choice not in validated_choices:
+                self._validate_account_choices(marketplace["id"], *choice)
+                validated_choices.add(choice)
+            contexts[product_type] = (template, category, rules)
+
+        rows: list[dict] = []
+        for product in products:
+            if product.get("allegro_offer_id") or product.get("status") == "inactive":
+                row = self._bulk_result(product, "skipped", "Már fel lett töltve; kihagyva.")
+                row["offer_id"] = product.get("allegro_offer_id")
+                rows.append(row)
+                continue
+            template, category, rules = contexts[str(product["type"])]
+            try:
+                selections: dict[str, Any] = {}
+                for parameter in category.get("parameters", []):
+                    parameter_id = str(parameter.get("id", ""))
+                    rule = rules.get(parameter_id)
+                    if rule and rule.get("mode") == "fixed":
+                        value = rule.get("value", "")
+                    elif rule and rule.get("mode") == "product":
+                        value = suggested_parameter_value(parameter, product)
+                    elif suggested_parameter_source(parameter):
+                        value = suggested_parameter_value(parameter, product)
+                    else:
+                        value = ""
+                    if str(value).strip():
+                        selections[parameter_id] = value
+
+                stock_rule = rules.get("__stock__", {})
+                stock_available = (
+                    str(stock_rule.get("value", ""))
+                    if stock_rule.get("mode") == "fixed"
+                    else None
+                )
+                payload = build_offer_payload(
+                    product,
+                    category,
+                    selections,
+                    currency=marketplace["currency"],
+                    language=marketplace["language"],
+                    stock_available=stock_available,
+                    shipping_rate_id=str(rules.get("__shipping_rate__", {}).get("value", "")),
+                    handling_time=str(rules.get("__handling_time__", {}).get("value", "PT24H")),
+                    responsible_producer_id=str(rules.get("__producer__", {}).get("value", "")),
+                    responsible_person_id=str(rules.get("__responsible_person__", {}).get("value", "")),
+                    safety_information=str(rules.get("__safety_information__", {}).get("value", "")),
+                )
+                row = self._bulk_result(product, "ready")
+                row.update({"category_id": str(category["id"]), "template_name": template["name"]})
+                row["_payload"] = payload
+                rows.append(row)
+            except Exception as exc:
+                row = self._bulk_result(product, "error", str(exc))
+                row.update({"category_id": str(category["id"]), "template_name": template["name"]})
+                rows.append(row)
+        return marketplace, rows
+
+    @staticmethod
+    def _bulk_summary(rows: list[dict]) -> dict:
+        return {
+            "total": len(rows),
+            "ready": sum(1 for row in rows if row["state"] == "ready"),
+            "created": sum(1 for row in rows if row["state"] == "created"),
+            "skipped": sum(1 for row in rows if row["state"] == "skipped"),
+            "errors": sum(1 for row in rows if row["state"] == "error"),
+        }
+
+    def preview_bulk(
+        self,
+        import_id: int,
+        template_assignments: dict[str, Any],
+        category_lookup: Callable[[str], dict],
+    ) -> dict:
+        marketplace, rows = self._prepare_bulk(import_id, template_assignments, category_lookup)
+        public_rows = [{key: value for key, value in row.items() if key != "_payload"} for row in rows]
+        return {
+            "ok": True,
+            "import_id": import_id,
+            "marketplace": marketplace,
+            "summary": self._bulk_summary(public_rows),
+            "rows": public_rows,
+        }
+
+    def create_bulk(
+        self,
+        import_id: int,
+        template_assignments: dict[str, Any],
+        category_lookup: Callable[[str], dict],
+        confirmation: str,
+    ) -> dict:
+        if confirmation.strip().upper() != "FELTÖLTÉS":
+            raise ValueError("A tömeges létrehozáshoz írd be pontosan: FELTÖLTÉS")
+        marketplace, rows = self._prepare_bulk(import_id, template_assignments, category_lookup)
+        for row in rows:
+            if row["state"] != "ready":
+                continue
+            payload = row.pop("_payload")
+            try:
+                response = self.client.request("POST", "/sale/product-offers", body=payload)
+                offer_id = self._offer_id(response)
+                self.database.mark_offer_created(row["product_id"], row["category_id"], offer_id)
+                row.update({
+                    "state": "created",
+                    "message": "Inaktív ajánlat létrehozva.",
+                    "offer_id": offer_id,
+                    "http_status": response["status"],
+                })
+            except Exception as exc:
+                row.update({"state": "error", "message": str(exc)})
+        return {
+            "ok": True,
+            "import_id": import_id,
+            "marketplace": marketplace,
+            "summary": self._bulk_summary(rows),
+            "rows": rows,
         }
