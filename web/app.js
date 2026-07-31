@@ -158,8 +158,8 @@ function updateProducerHint(){const option=$('#responsibleProducer').selectedOpt
 function togglePreorder(){$('#preorderDateWrap').classList.toggle('hidden',!$('#preorder').checked)}
 function syncOfferPrice(){
   const product=uploadProducts.find(item=>String(item.id)===$('#offerProduct').value);
-  if(uploadMarketplace?.currency==='HUF'&&product)$('#offerPrice').value=product.price_huf||'';
-  else if(!product)$('#offerPrice').value='';
+  if($('#priceFromProduct').checked&&uploadMarketplace?.currency==='HUF'&&product)$('#offerPrice').value=product.price_huf||'';
+  else if($('#priceFromProduct').checked&&!product)$('#offerPrice').value='';
   if($('#stockFromProduct').checked)$('#offerStock').value=product?.stock??'';
 }
 function renderTemplateOptions(selectedId=''){
@@ -251,6 +251,7 @@ function parameterField(parameter){
 function applyTemplateRules(template){
   const rules=new Map((template?.rules||[]).map(rule=>[String(rule.parameter_id),rule]));
   $$('[data-parameter]',$('#parameterFields')).forEach(field=>{const rule=rules.get(field.dataset.parameter);if(!rule)return;const dynamic=$(`[data-dynamic-param="${field.dataset.parameter}"]`,$('#parameterFields'));if(dynamic)dynamic.checked=rule.mode==='product';if(rule.mode==='fixed'||!dynamic)field.value=rule.value;else field.value=field.dataset.suggested||'';field.closest('.parameter-field').classList.toggle('dynamic',Boolean(dynamic?.checked))});
+  const priceRule=rules.get('__price__');$('#priceFromProduct').checked=!priceRule||priceRule.mode==='product';if(priceRule?.mode==='fixed')$('#offerPrice').value=priceRule.value;else syncOfferPrice();
   const stockRule=rules.get('__stock__');if(stockRule){$('#stockFromProduct').checked=stockRule.mode==='product';if(stockRule.mode==='fixed')$('#offerStock').value=stockRule.value;else syncOfferPrice()}
   const fixedFields={__shipping_rate__:'#shippingRate',__handling_time__:'#handlingTime',__producer__:'#responsibleProducer',__responsible_person__:'#responsiblePerson',__safety_information__:'#safetyInformation'};Object.entries(fixedFields).forEach(([key,selector])=>{const rule=rules.get(key);if(rule&&rule.mode==='fixed')$(selector).value=rule.value});
   const preorderRule=rules.get('__preorder__');if(preorderRule)$('#preorder').checked=preorderRule.value==='true';togglePreorder();updateProducerHint();
@@ -274,6 +275,7 @@ async function applySelectedTemplate(){
 }
 function collectTemplateRules(){
   const rules=$$('[data-parameter]',$('#parameterFields')).map(field=>{const dynamic=$(`[data-dynamic-param="${field.dataset.parameter}"]`,$('#parameterFields'));return{parameter_id:field.dataset.parameter,mode:dynamic?.checked?'product':'fixed',value:dynamic?.checked?'':field.value}});
+  rules.push({parameter_id:'__price__',mode:$('#priceFromProduct').checked?'product':'fixed',value:$('#priceFromProduct').checked?'':$('#offerPrice').value.trim()});
   rules.push({parameter_id:'__stock__',mode:$('#stockFromProduct').checked?'product':'fixed',value:$('#stockFromProduct').checked?'':$('#offerStock').value.trim()});
   [['__shipping_rate__','#shippingRate'],['__handling_time__','#handlingTime'],['__producer__','#responsibleProducer'],['__responsible_person__','#responsiblePerson'],['__safety_information__','#safetyInformation']].forEach(([parameter,selector])=>rules.push({parameter_id:parameter,mode:'fixed',value:$(selector).value}));rules.push({parameter_id:'__preorder__',mode:'fixed',value:String($('#preorder').checked)});return rules;
 }
@@ -459,7 +461,7 @@ $('#csvFile').addEventListener('change',event=>previewFile(event.target.files[0]
 const dz=$('#dropzone');['dragenter','dragover'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',event=>previewFile(event.dataTransfer.files[0]));
 $('#useSample').addEventListener('click',async()=>{try{const response=await fetch('/sample.csv');if(!response.ok)throw new Error('A mintafájl nem érhető el.');const blob=await response.blob();previewFile(new File([blob],'export-minta.csv',{type:'text/csv'}))}catch(error){toast(error.message,'error')}});
 $('#commitImport').addEventListener('click',commitImport);$('#settingsForm').addEventListener('submit',saveSettings);$('#checkConnection').addEventListener('click',checkConnection);$('#checkTemuConnection').addEventListener('click',checkTemuConnection);$('#checkExpressOneConnection').addEventListener('click',checkExpressOneConnection);$('#startLogin').addEventListener('click',startLogin);
-$('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id,activeTemplate)});$('#stockFromProduct').addEventListener('change',()=>{if($('#stockFromProduct').checked)syncOfferPrice()});$('#applyTemplate').addEventListener('click',applySelectedTemplate);$('#saveTemplate').addEventListener('click',saveTemplate);$('#deleteTemplate').addEventListener('click',deleteTemplate);$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
+$('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id,activeTemplate)});$('#priceFromProduct').addEventListener('change',()=>{if($('#priceFromProduct').checked)syncOfferPrice()});$('#stockFromProduct').addEventListener('change',()=>{if($('#stockFromProduct').checked)syncOfferPrice()});$('#applyTemplate').addEventListener('click',applySelectedTemplate);$('#saveTemplate').addEventListener('click',saveTemplate);$('#deleteTemplate').addEventListener('click',deleteTemplate);$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
 $('#bulkImportBatch').addEventListener('change',loadBulkImportBatch);$('#previewBulkOffers').addEventListener('click',previewBulkOffers);$('#createBulkOffers').addEventListener('click',createBulkOffers);
 $('#preorder').addEventListener('change',togglePreorder);$('#responsibleProducer').addEventListener('change',updateProducerHint);
 $('#refreshOrders').addEventListener('click',loadOrders);

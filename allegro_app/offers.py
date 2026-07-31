@@ -572,10 +572,6 @@ class OfferService:
             raise ValueError("Nincs sablon hozzárendelve ezekhez a típusokhoz: " + ", ".join(missing_types))
 
         marketplace = self.marketplace()
-        if marketplace["currency"] != "HUF":
-            raise ValueError(
-                f"A tömeges import HUF árakat tartalmaz, de a fiók alappénzneme {marketplace['currency']}."
-            )
 
         contexts: dict[str, tuple[dict, dict, dict[str, dict[str, str]]]] = {}
         validated_choices: set[tuple[str, str, str]] = set()
@@ -597,6 +593,9 @@ class OfferService:
                     f"A(z) {template['name']} sablon előrendelést kér, de nincs benne feladási dátum. "
                     "Ehhez használd az egyedi feltöltést."
                 )
+            price_rule = rules.get("__price__", {})
+            if price_rule.get("mode") == "fixed" and not str(price_rule.get("value", "")).strip():
+                raise ValueError(f"A(z) {template['name']} sablonban nincs megadva a fix ár.")
             shipping_rate_id = str(rules.get("__shipping_rate__", {}).get("value", ""))
             producer_id = str(rules.get("__producer__", {}).get("value", ""))
             person_id = str(rules.get("__responsible_person__", {}).get("value", ""))
@@ -605,6 +604,17 @@ class OfferService:
                 self._validate_account_choices(marketplace["id"], *choice)
                 validated_choices.add(choice)
             contexts[product_type] = (template, category, rules)
+
+        if marketplace["currency"] != "HUF":
+            product_price_types = [
+                product_type for product_type, (_, _, rules) in contexts.items()
+                if rules.get("__price__", {}).get("mode") != "fixed"
+            ]
+            if product_price_types:
+                raise ValueError(
+                    f"A fiók alappénzneme {marketplace['currency']}. Adj meg fix árat a sablonban ezekhez: "
+                    + ", ".join(product_price_types)
+                )
 
         rows: list[dict] = []
         for product in products:
@@ -636,12 +646,19 @@ class OfferService:
                     if stock_rule.get("mode") == "fixed"
                     else None
                 )
+                price_rule = rules.get("__price__", {})
+                price_amount = (
+                    str(price_rule.get("value", ""))
+                    if price_rule.get("mode") == "fixed"
+                    else None
+                )
                 payload = build_offer_payload(
                     product,
                     category,
                     selections,
                     currency=marketplace["currency"],
                     language=marketplace["language"],
+                    price_amount=price_amount,
                     stock_available=stock_available,
                     shipping_rate_id=str(rules.get("__shipping_rate__", {}).get("value", "")),
                     handling_time=str(rules.get("__handling_time__", {}).get("value", "PT24H")),

@@ -538,6 +538,7 @@ class BulkOfferTests(unittest.TestCase):
     class Client:
         def __init__(self) -> None:
             self.posts: list[str] = []
+            self.prices: list[str] = []
             self.fail_sku = "TEST-POLO-S"
 
         def request(self, method: str, path: str, **kwargs: object) -> dict:
@@ -545,6 +546,7 @@ class BulkOfferTests(unittest.TestCase):
                 body = kwargs["body"]
                 sku = str(body["external"]["id"])  # type: ignore[index]
                 self.posts.append(sku)
+                self.prices.append(str(body["sellingMode"]["price"]["amount"]))  # type: ignore[index]
                 if sku == self.fail_sku:
                     raise AllegroError("Allegro sorhiba")
                 return {"status": 201, "body": {"id": f"offer-{sku}"}, "headers": {}}
@@ -578,6 +580,7 @@ class BulkOfferTests(unittest.TestCase):
             import_id = db.create_preview("ket-varians.csv", parse_csv(source))
             db.commit_import(import_id)
             template = db.save_offer_template("Póló sablon", "123", "Pólók", [
+                {"parameter_id": "__price__", "mode": "fixed", "value": "6490"},
                 {"parameter_id": "__stock__", "mode": "product", "value": ""},
                 {"parameter_id": "__shipping_rate__", "mode": "fixed", "value": "rate-1"},
                 {"parameter_id": "__handling_time__", "mode": "fixed", "value": "PT24H"},
@@ -603,6 +606,7 @@ class BulkOfferTests(unittest.TestCase):
             self.assertEqual(1, retry["summary"]["created"])
             self.assertEqual(1, retry["summary"]["skipped"])
             self.assertEqual(3, len(client.posts))
+            self.assertEqual(["6490", "6490", "6490"], client.prices)
 
 
 class InvoiceTests(unittest.TestCase):
