@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 from allegro_app.config import AppConfig
 from allegro_app.database import Database
 from allegro_app.importer import build_title, parse_csv
-from allegro_app.invoices import InvoiceError, InvoiceService, build_invoice_xml
+from allegro_app.invoices import InvoiceError, InvoiceService, build_custom_invoice_xml, build_invoice_xml
 from allegro_app.offers import (
     OfferService,
     build_offer_payload,
@@ -30,6 +30,13 @@ from allegro_app.temu_products import (
     TEMU_V3_ADD,
     TemuProductService,
     build_temu_v3_payload,
+)
+from allegro_app.temu_invoices import (
+    TEMU_INVOICE_DETAIL,
+    TEMU_INVOICE_UPLOAD,
+    TEMU_ORDER_LIST,
+    TEMU_ORDER_SHIPPING,
+    TemuInvoiceService,
 )
 
 
@@ -589,6 +596,96 @@ class InvoiceTests(unittest.TestCase):
             service.create_and_upload(sample_order()["id"])
             self.assertEqual(1, fake.calls)
             self.assertEqual(1, service.allegro.posts)  # type: ignore[attr-defined]
+
+
+class TemuInvoiceTests(unittest.TestCase):
+    @staticmethod
+    def invoice_detail() -> dict:
+        return {"result": {"invoiceDetailInfoList": [{
+            "invoiceDetailType": 1,
+            "currency": "HUF",
+            "orderMetaInfo": {"parentOrderSn": "PO-123456", "orderTimeMillis": 1785398400000},
+            "goodsInfoList": [{
+                "description": "Pamut póló", "skuSpec": "Fekete / M", "quantity": 2,
+                "unitPriceExcludeVAT": 500000, "unitPriceWithVAT": 635000,
+                "totalGoodsAmount": 1270000, "vatRate": 27, "vatRateBase": 100,
+            }],
+            "shippingFee": {"shippingAmountExcludeTax": 77953, "shippingAmountWithTax": 99000},
+        }]}}
+
+    @staticmethod
+    def shipping() -> dict:
+        return {"result": {
+            "receiptName": "Minta Vevő", "mail": "buyer@temumail.com",
+            "regionName1": "Magyarország", "regionName2": "Pest", "regionName3": "Budapest",
+            "postCode": "1011", "addressLineAll": "Fő utca 1.",
+        }}
+
+    def test_custom_invoice_xml_keeps_temu_exact_amounts(self) -> None:
+        invoice = {
+            "external_id": "temu-PO-1-1", "order_number": "PO-1", "currency": "HUF",
+            "buyer": {"name": "Minta Vevő", "country": "HU", "zip": "1011",
+                      "city": "Budapest", "street": "Fő utca 1.", "email": "masked@temu.com"},
+            "items": [{"name": "Pamut póló", "quantity": "2", "net": "10000.00",
+                       "vat": "2700.00", "gross": "12700.00", "vat_rate": "27"}],
+        }
+        root = ET.fromstring(build_custom_invoice_xml(invoice, "agent", "TEMU", True))
+        ns = {"s": "http://www.szamlazz.hu/xmlszamla"}
+        self.assertEqual("Pamut póló", root.findtext("s:tetelek/s:tetel/s:megnevezes", namespaces=ns))
+        self.assertEqual("12700.00", root.findtext("s:tetelek/s:tetel/s:bruttoErtek", namespaces=ns))
+        self.assertEqual("true", root.findtext("s:vevo/s:sendEmail", namespaces=ns))
+
+    def test_temu_invoice_uses_api_description_and_is_idempotent(self) -> None:
+        class Temu:
+            uploads = 0
+
+            @staticmethod
+            def _result(response: dict) -> dict:
+                return response["result"]
+
+            def request(self, api_type: str, parameters: dict | None = None) -> dict:
+                if api_type == TEMU_INVOICE_DETAIL:
+                    return TemuInvoiceTests.invoice_detail()
+                if api_type == TEMU_ORDER_SHIPPING:
+                    return TemuInvoiceTests.shipping()
+                if api_type == TEMU_INVOICE_UPLOAD:
+                    self.uploads += 1
+                    self.last_upload = parameters
+                    return {"result": {"success": True}}
+                if api_type == TEMU_ORDER_LIST:
+                    return {"result": {"pageItems": [], "totalItemNum": 0}}
+                raise AssertionError(api_type)
+
+        class Szamlazz:
+            calls = 0
+
+            def create_custom_invoice(self, invoice: dict, prefix: str = "") -> tuple[str, bytes, str]:
+                self.calls += 1
+                self.invoice = invoice
+                return "TEMU-2026-1", b"%PDF-temu", invoice["buyer"]["email"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = AppConfig(root, {
+                "INVOICE_DRIVER": "szamlazz", "SZAMLAZZ_AGENT_KEY": "key",
+                "SZAMLAZZ_TEMU_INVOICE_PREFIX": "TEMU",
+                "TEMU_INVOICE_PUBLIC_BASE_URL": "https://sync.example.com",
+            })
+            database = Database(root / "state.sqlite")
+            temu = Temu()
+            service = TemuInvoiceService(config, database, temu)  # type: ignore[arg-type]
+            szamlazz = Szamlazz()
+            service.szamlazz = szamlazz  # type: ignore[assignment]
+            result = service.create_and_upload("PO-123456")
+            again = service.create_and_upload("PO-123456")
+            self.assertEqual("Pamut póló", szamlazz.invoice["items"][0]["name"])
+            self.assertEqual("12700.00", szamlazz.invoice["items"][0]["gross"])
+            self.assertEqual(1, szamlazz.calls)
+            self.assertEqual(1, temu.uploads)
+            self.assertEqual("uploaded", result["invoices"][0]["status"])
+            self.assertEqual("uploaded", again["invoices"][0]["status"])
+            self.assertEqual(1, temu.last_upload["request"]["recipientType"])
+            self.assertTrue(temu.last_upload["request"]["fileUrl"].startswith("https://sync.example.com/"))
 
 
 class TemuTests(unittest.TestCase):

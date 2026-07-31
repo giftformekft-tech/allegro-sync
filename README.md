@@ -69,6 +69,23 @@ A pólók „Fő minta” paramétere alapból férfi/női terméknél „mintá
 (nyomatos)”, gyerekterméknél „nyomott mintás”. A „Nyomtatási terület”
 alapértéke „elülső”; mindegyik érték átírható és sablonba menthető.
 
+### Temu rendelés és számlázás
+
+A Temu platformra váltva a **Rendelések** képernyő az EU Open Platform
+`bg.order.list.v2.get` adatait mutatja. A „Számlaadatok ellenőrzése” előbb
+lekéri a Temu hivatalos számlarészleteit és a virtuális vevői e-mailt, majd
+külön mutatja a vevőnek és – ha a Temu ilyet ad vissza – a platformnak szóló
+bizonylatot. A terméktétel neve a Temu `goodsInfoList[].description` mezője;
+a kupon platform által térített része külön, egyértelmű megnevezést kap.
+
+A kiállítás előtt kötelező beállítani egy nyilvános HTTPS alapcímet. A Temu
+erről a futó alkalmazásról tölti le a tokennel védett PDF-et, majd a program
+a `temu.pay.tax.merchant.upload.invoice` végponttal a rendeléshez kapcsolja.
+A folyamat külön `temu_order_invoices` táblát és külön Temu számlaelőtagot
+használ, ezért nem ütközik sem az Allegro számlázásával, sem a régi Temu
+CSV/XLSX exporttal. Jóváíró bizonylat és nem HUF-os rendelés csak külön
+ellenőrzés után lesz engedélyezhető.
+
 Automata tesztek:
 
 ```powershell

@@ -20,7 +20,16 @@ ENV_KEYS = (
     "INVOICE_DRIVER",
     "SZAMLAZZ_AGENT_KEY",
     "SZAMLAZZ_INVOICE_PREFIX",
+    "SZAMLAZZ_TEMU_INVOICE_PREFIX",
     "SZAMLAZZ_SEND_EMAIL",
+    "TEMU_INVOICE_PUBLIC_BASE_URL",
+    "TEMU_PLATFORM_NAME",
+    "TEMU_PLATFORM_COUNTRY",
+    "TEMU_PLATFORM_ZIP",
+    "TEMU_PLATFORM_CITY",
+    "TEMU_PLATFORM_STREET",
+    "TEMU_PLATFORM_TAX_ID",
+    "TEMU_PLATFORM_EMAIL",
 )
 
 
@@ -45,6 +54,7 @@ class AppConfig:
             "TEMU_ENDPOINT": "https://openapi-b-eu.temu.com/openapi/router",
             "INVOICE_DRIVER": "none",
             "SZAMLAZZ_SEND_EMAIL": "false",
+            "SZAMLAZZ_TEMU_INVOICE_PREFIX": "",
         }
         source = root / ".env"
         if not source.exists():
@@ -97,7 +107,16 @@ class AppConfig:
             "invoice_driver": self.values.get("INVOICE_DRIVER", "none"),
             "szamlazz_agent_key_set": bool(self.values.get("SZAMLAZZ_AGENT_KEY", "")),
             "invoice_prefix": self.values.get("SZAMLAZZ_INVOICE_PREFIX", ""),
+            "temu_invoice_prefix": self.values.get("SZAMLAZZ_TEMU_INVOICE_PREFIX", ""),
             "invoice_email_fallback": self.values.get("SZAMLAZZ_SEND_EMAIL", "false").lower() == "true",
+            "temu_invoice_public_base_url": self.values.get("TEMU_INVOICE_PUBLIC_BASE_URL", ""),
+            "temu_platform_name": self.values.get("TEMU_PLATFORM_NAME", ""),
+            "temu_platform_country": self.values.get("TEMU_PLATFORM_COUNTRY", ""),
+            "temu_platform_zip": self.values.get("TEMU_PLATFORM_ZIP", ""),
+            "temu_platform_city": self.values.get("TEMU_PLATFORM_CITY", ""),
+            "temu_platform_street": self.values.get("TEMU_PLATFORM_STREET", ""),
+            "temu_platform_tax_id": self.values.get("TEMU_PLATFORM_TAX_ID", ""),
+            "temu_platform_email": self.values.get("TEMU_PLATFORM_EMAIL", ""),
             "invoice_ready": (
                 self.values.get("INVOICE_DRIVER") == "szamlazz"
                 and bool(self.values.get("SZAMLAZZ_AGENT_KEY", ""))

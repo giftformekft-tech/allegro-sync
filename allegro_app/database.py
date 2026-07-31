@@ -130,6 +130,21 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS temu_order_invoices (
+                    parent_order_sn TEXT NOT NULL,
+                    document_key TEXT NOT NULL,
+                    recipient_type INTEGER NOT NULL,
+                    invoice_direction INTEGER NOT NULL,
+                    invoice_number TEXT,
+                    buyer_email TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    file_token TEXT,
+                    pdf_path TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (parent_order_sn, document_key)
+                );
                 """
             )
             self._ensure_columns(db, "products", {
@@ -512,4 +527,75 @@ class Database:
             ).fetchone()
         if row is None:
             raise RuntimeError("A számla állapotának mentése nem sikerült.")
+        return dict(row)
+
+    def get_temu_order_invoice(self, parent_order_sn: str, document_key: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM temu_order_invoices WHERE parent_order_sn = ? AND document_key = ?",
+                (parent_order_sn, document_key),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_temu_order_invoices(self) -> dict[str, list[dict[str, Any]]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM temu_order_invoices ORDER BY created_at DESC"
+            ).fetchall()
+        result: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            result.setdefault(str(row["parent_order_sn"]), []).append(dict(row))
+        return result
+
+    def find_temu_invoice_file(self, file_token: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM temu_order_invoices WHERE file_token = ?", (file_token,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_temu_order_invoice(
+        self,
+        parent_order_sn: str,
+        document_key: str,
+        *,
+        recipient_type: int,
+        invoice_direction: int,
+        status: str,
+        invoice_number: str | None = None,
+        buyer_email: str = "",
+        file_token: str | None = None,
+        pdf_path: str | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO temu_order_invoices
+                (parent_order_sn, document_key, recipient_type, invoice_direction,
+                 invoice_number, buyer_email, status, file_token, pdf_path, error,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(parent_order_sn, document_key) DO UPDATE SET
+                  recipient_type=excluded.recipient_type,
+                  invoice_direction=excluded.invoice_direction,
+                  invoice_number=COALESCE(excluded.invoice_number, temu_order_invoices.invoice_number),
+                  buyer_email=CASE WHEN excluded.buyer_email != '' THEN excluded.buyer_email ELSE temu_order_invoices.buyer_email END,
+                  status=excluded.status,
+                  file_token=COALESCE(excluded.file_token, temu_order_invoices.file_token),
+                  pdf_path=COALESCE(excluded.pdf_path, temu_order_invoices.pdf_path),
+                  error=excluded.error,
+                  updated_at=excluded.updated_at""",
+                (
+                    parent_order_sn, document_key, recipient_type, invoice_direction,
+                    invoice_number, buyer_email, status, file_token, pdf_path, error,
+                    timestamp, timestamp,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM temu_order_invoices WHERE parent_order_sn = ? AND document_key = ?",
+                (parent_order_sn, document_key),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("A Temu-számla állapotának mentése nem sikerült.")
         return dict(row)

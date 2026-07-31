@@ -12,6 +12,7 @@ let uploadTemplates = [];
 let activeTemplate = null;
 let temuProducts = [];
 let temuVariantGroups = [];
+let selectedTemuInvoiceOrder = '';
 
 async function api(path, options={}) {
   const response = await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
@@ -41,6 +42,7 @@ function navigate(view){
   if(view==='dashboard') loadDashboard(); if(view==='products') loadProducts();
   if(view==='upload') loadUpload();
   if(view==='orders'&&activePlatform==='allegro') loadOrders();
+  if(view==='orders'&&activePlatform==='temu') loadTemuOrders();
   if(view==='settings') loadSettings(); if(view==='integrations') loadConnectionState();
 }
 
@@ -285,8 +287,50 @@ async function createInvoice(orderId,button){
   }catch(error){toast(error.message,'error');await loadOrders()}finally{button.disabled=false;button.textContent=original}
 }
 
+function temuInvoiceStatus(row){
+  if(row.invoice_status==='uploaded')return '<span class="badge good">Temuhoz feltöltve</span>';
+  if(row.invoice_status==='upload_failed')return '<span class="badge bad">Feltöltési hiba</span>';
+  if(row.invoice_status==='created')return '<span class="badge processing">Feltöltésre vár</span>';
+  return '<span class="badge neutral">Nincs számla</span>';
+}
+async function loadTemuOrders(){
+  const refresh=$('#refreshTemuOrders');refresh.disabled=true;
+  try{
+    const data=await api('/api/temu/orders');const rows=data.orders||[];
+    $('#temuOrderEmpty').classList.toggle('hidden',rows.length>0);
+    $('#temuOrderRows').innerHTML=rows.map(row=>{
+      const products=(row.product_names||[]).join(', ');
+      const action=row.status===3?'<span class="muted">Törölt rendelés</span>':`<button class="secondary" data-temu-invoice-preview="${escapeHtml(row.id)}">Számlaadatok ellenőrzése</button>`;
+      const numbers=(row.invoice_numbers||[]).join(', ');
+      const error=row.invoice_error?`<small title="${escapeHtml(row.invoice_error)}">${escapeHtml(row.invoice_error)}</small>`:'';
+      return `<tr><td><strong>${formatDate(row.updated_at)}</strong><small class="order-id">${escapeHtml(row.id)}</small></td><td><strong>${escapeHtml(products||'Temu termék')}</strong></td><td><strong>${formatNumber(row.item_count)} db</strong></td><td><span class="badge ${[2,4,5,41,51].includes(row.status)?'good':'neutral'}">${escapeHtml(row.status_label)}</span></td><td>${temuInvoiceStatus(row)}${numbers?`<small>${escapeHtml(numbers)}</small>`:''}</td><td><div class="order-action">${action}${error}</div></td></tr>`;
+    }).join('');
+  }catch(error){$('#temuOrderRows').innerHTML='';$('#temuOrderEmpty').classList.remove('hidden');toast(error.message,'error')}finally{refresh.disabled=false}
+}
+async function previewTemuInvoices(orderId){
+  try{
+    const data=await api(`/api/temu/orders/${encodeURIComponent(orderId)}/invoice-preview`);
+    selectedTemuInvoiceOrder=orderId;$('#temuInvoicePreviewTitle').textContent=`${orderId} számlái`;
+    const documents=data.documents||[];
+    $('#temuInvoiceDocuments').innerHTML=documents.map((doc,index)=>{
+      const buyer=doc.buyer||{};const items=(doc.items||[]).map(item=>`${escapeHtml(item.name)} · ${escapeHtml(item.gross)} ${escapeHtml(doc.currency)}`).join('<br>');
+      const problems=(doc.problems||[]).length?`<small class="problem-list">${doc.problems.map(escapeHtml).join('<br>')}</small>`:'<small>Az API-adatok teljesek, kiállítható.</small>';
+      const state=doc.status==='uploaded'?' · már feltöltve':doc.invoice_number?` · ${escapeHtml(doc.invoice_number)}`:'';
+      return `<div><b>${String(index+1).padStart(2,'0')}</b><span><strong>${escapeHtml(doc.recipient_label)} · ${escapeHtml(doc.total)} ${escapeHtml(doc.currency)}${state}</strong><small>${escapeHtml(buyer.name||'—')} · ${escapeHtml(buyer.email||'nincs e-mail')}</small>${items?`<small>${items}</small>`:''}${problems}</span></div>`;
+    }).join('');
+    const create=$('#createTemuInvoices');create.disabled=!documents.length||documents.some(doc=>!doc.ready)||documents.every(doc=>doc.status==='uploaded');create.dataset.orderId=orderId;
+    $('#temuInvoicePreview').classList.remove('hidden');$('#temuInvoicePreview').scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(error){toast(error.message,'error')}
+}
+async function createTemuInvoices(){
+  const button=$('#createTemuInvoices');const orderId=button.dataset.orderId||selectedTemuInvoiceOrder;if(!orderId)return;
+  if(!confirm('A Számlázz.hu éles számlát vagy számlákat állít ki, majd a PDF-eket feltölti a Temu rendeléshez. Folytatod?'))return;
+  const original=button.textContent;button.disabled=true;button.textContent='Számlázás és feltöltés…';
+  try{const data=await api(`/api/temu/orders/${encodeURIComponent(orderId)}/invoices`,{method:'POST',body:'{}'});toast(`${(data.invoices||[]).length} Temu-számla elkészült és feltöltve.`,'success');await loadTemuOrders();await previewTemuInvoices(orderId);loadDashboard()}catch(error){toast(error.message,'error');await previewTemuInvoices(orderId)}finally{button.textContent=original}
+}
+
 async function loadSettings(){
-  try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','temu_endpoint','temu_app_key','invoice_driver','invoice_prefix'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});f.elements.invoice_email_fallback.value=String(Boolean(s.invoice_email_fallback));$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#temuSecretHint').textContent=s.temu_app_secret_set?'Van elmentett App Secret.':'Még nincs elmentett App Secret.';$('#temuTokenHint').textContent=s.temu_access_token_set?'Van elmentett Access Token.':'Még nincs elmentett Access Token.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
+  try{const s=await api('/api/settings');const f=$('#settingsForm');['environment','client_id','user_agent','language','temu_endpoint','temu_app_key','invoice_driver','invoice_prefix','temu_invoice_prefix','temu_invoice_public_base_url','temu_platform_name','temu_platform_country','temu_platform_zip','temu_platform_city','temu_platform_street','temu_platform_tax_id','temu_platform_email'].forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]||''});f.elements.invoice_email_fallback.value=String(Boolean(s.invoice_email_fallback));$('#secretHint').textContent=s.client_secret_set?'Van elmentett titkos kulcs.':'Még nincs elmentett titkos kulcs.';$('#temuSecretHint').textContent=s.temu_app_secret_set?'Van elmentett App Secret.':'Még nincs elmentett App Secret.';$('#temuTokenHint').textContent=s.temu_access_token_set?'Van elmentett Access Token.':'Még nincs elmentett Access Token.';$('#agentHint').textContent=s.szamlazz_agent_key_set?'Van elmentett Agent kulcs.':'Még nincs elmentett Agent kulcs.'}catch(error){toast(error.message,'error')}
 }
 async function saveSettings(event){
   event.preventDefault();const form=event.currentTarget;const f=new FormData(form);const body=Object.fromEntries(f.entries());
@@ -304,6 +348,7 @@ async function pollLogin(code){try{const data=await api('/api/auth/device/poll',
 
 document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}const invoice=event.target.closest('[data-invoice-order]');if(invoice)createInvoice(invoice.dataset.invoiceOrder,invoice);const temuRefresh=event.target.closest('[data-temu-refresh]');if(temuRefresh)refreshTemuUpload(temuRefresh.dataset.temuRefresh)});
 document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters()});
+document.addEventListener('click',event=>{const preview=event.target.closest('[data-temu-invoice-preview]');if(preview)previewTemuInvoices(preview.dataset.temuInvoicePreview)});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 $('#platformSelect').addEventListener('change',event=>setPlatform(event.target.value));
@@ -317,4 +362,5 @@ $('#commitImport').addEventListener('click',commitImport);$('#settingsForm').add
 $('#searchCategories').addEventListener('click',searchCategories);$('#categoryPhrase').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchCategories()}});$('#offerProduct').addEventListener('change',()=>{syncOfferPrice();if(selectedCategory)inspectCategory(selectedCategory.id,activeTemplate)});$('#stockFromProduct').addEventListener('change',()=>{if($('#stockFromProduct').checked)syncOfferPrice()});$('#applyTemplate').addEventListener('click',applySelectedTemplate);$('#saveTemplate').addEventListener('click',saveTemplate);$('#deleteTemplate').addEventListener('click',deleteTemplate);$('#previewOffer').addEventListener('click',previewOffer);$('#createOffer').addEventListener('click',createOffer);
 $('#preorder').addEventListener('change',togglePreorder);$('#responsibleProducer').addEventListener('change',updateProducerHint);
 $('#refreshOrders').addEventListener('click',loadOrders);
+$('#refreshTemuOrders').addEventListener('click',loadTemuOrders);$('#createTemuInvoices').addEventListener('click',createTemuInvoices);
 setPlatform(activePlatform,false);navigate(location.hash.slice(1)||'dashboard');

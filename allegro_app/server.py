@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
 from pathlib import Path
+import re
 import threading
 import urllib.parse
 import webbrowser
@@ -19,6 +20,7 @@ from .invoices import InvoiceError, InvoiceService
 from .offers import OfferService, suggested_parameter_source, suggested_parameter_value
 from .temu import TemuClient, TemuError
 from .temu_products import TemuProductService
+from .temu_invoices import TemuInvoiceService
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +66,10 @@ class Application:
     @property
     def temu_products(self) -> TemuProductService:
         return TemuProductService(self.database, self.temu)
+
+    @property
+    def temu_invoices(self) -> TemuInvoiceService:
+        return TemuInvoiceService(self.config, self.database, self.temu)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -148,6 +154,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"template": self.app.temu.category_template(category_id)})
             elif parsed.path == "/api/temu/uploads":
                 self._json({"uploads": self.app.database.list_temu_uploads()})
+            elif parsed.path == "/api/temu/orders":
+                self._json({"orders": self.app.temu_invoices.list_orders()})
+            elif parsed.path.startswith("/api/temu/orders/") and parsed.path.endswith("/invoice-preview"):
+                order_id = urllib.parse.unquote(
+                    parsed.path.removeprefix("/api/temu/orders/").removesuffix("/invoice-preview").strip("/")
+                )
+                self._json(self.app.temu_invoices.preview(order_id))
+            elif parsed.path.startswith("/api/temu/invoice-files/") and parsed.path.endswith(".pdf"):
+                token = urllib.parse.unquote(
+                    parsed.path.removeprefix("/api/temu/invoice-files/").removesuffix(".pdf")
+                )
+                self._temu_invoice_file(token)
             elif parsed.path == "/api/marketplace":
                 self._json({"marketplace": self.app.offers.marketplace()})
             elif parsed.path == "/api/offer-options":
@@ -216,6 +234,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.path.removeprefix("/api/temu/uploads/").removesuffix("/refresh").strip("/")
                 )
                 self._json(self.app.temu_products.refresh_status(upload_id))
+            elif self.path.startswith("/api/temu/orders/") and self.path.endswith("/invoices"):
+                order_id = urllib.parse.unquote(
+                    self.path.removeprefix("/api/temu/orders/").removesuffix("/invoices").strip("/")
+                )
+                self._json(self.app.temu_invoices.create_and_upload(order_id), HTTPStatus.CREATED)
             elif self.path == "/api/auth/device/start":
                 self._json(self.app.auth.start_device_flow())
             elif self.path == "/api/auth/device/poll":
@@ -290,7 +313,16 @@ class Handler(BaseHTTPRequestHandler):
                 "invoice_driver": "INVOICE_DRIVER",
                 "szamlazz_agent_key": "SZAMLAZZ_AGENT_KEY",
                 "invoice_prefix": "SZAMLAZZ_INVOICE_PREFIX",
+                "temu_invoice_prefix": "SZAMLAZZ_TEMU_INVOICE_PREFIX",
                 "invoice_email_fallback": "SZAMLAZZ_SEND_EMAIL",
+                "temu_invoice_public_base_url": "TEMU_INVOICE_PUBLIC_BASE_URL",
+                "temu_platform_name": "TEMU_PLATFORM_NAME",
+                "temu_platform_country": "TEMU_PLATFORM_COUNTRY",
+                "temu_platform_zip": "TEMU_PLATFORM_ZIP",
+                "temu_platform_city": "TEMU_PLATFORM_CITY",
+                "temu_platform_street": "TEMU_PLATFORM_STREET",
+                "temu_platform_tax_id": "TEMU_PLATFORM_TAX_ID",
+                "temu_platform_email": "TEMU_PLATFORM_EMAIL",
             }
             updates = {
                 env_key: str(body[key])
@@ -321,6 +353,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime + ("; charset=utf-8" if mime.startswith("text/") else ""))
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _temu_invoice_file(self, token: str) -> None:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", token):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        record = self.app.database.find_temu_invoice_file(token)
+        target = Path(str(record.get("pdf_path", ""))) if record else None
+        if not target or not target.is_file() or not target.resolve().is_relative_to((self.app.root / "var" / "invoices").resolve()):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        body = target.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", 'inline; filename="invoice.pdf"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "private, max-age=300")
         self.end_headers()
         self.wfile.write(body)
 

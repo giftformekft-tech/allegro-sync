@@ -32,6 +32,7 @@
 .temu-only { display: none; }
 .settings-save { grid-column: 1 / -1; }
 .temu-only.coming-soon .temu-logo { margin: 0 auto 15px; }
+.coming-soon.temu-only { display: none !important; }
 
 .temu-only.temu-wizard { display: none; }
 body[data-platform="temu"] .temu-only.temu-wizard { display: grid; gap: 18px; }

@@ -257,6 +257,99 @@ def build_invoice_xml(
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+def build_custom_invoice_xml(
+    invoice: dict,
+    agent_key: str,
+    prefix: str = "",
+    send_email: bool = False,
+) -> bytes:
+    """Build Számla Agent XML from marketplace-neutral, exact net/gross rows."""
+    if not agent_key.strip():
+        raise InvoiceError("Hiányzik a Számlázz.hu Agent kulcs.")
+    external_id = str(invoice.get("external_id", "")).strip()
+    buyer = invoice.get("buyer") if isinstance(invoice.get("buyer"), dict) else {}
+    items = invoice.get("items") if isinstance(invoice.get("items"), list) else []
+    missing = [label for key, label in (
+        ("external_id", "külső azonosító"), ("name", "vevő neve"),
+        ("zip", "irányítószám"), ("city", "település"), ("street", "cím"),
+    ) if not (external_id if key == "external_id" else str(buyer.get(key, "")).strip())]
+    if missing:
+        raise InvoiceError("Hiányos számlázási adatok: " + ", ".join(missing) + ".")
+    if not items:
+        raise InvoiceError("A számla nem tartalmaz számlázható tételt.")
+
+    invoice_date = str(invoice.get("date") or date.today().isoformat())[:10]
+    ET.register_namespace("", XML_NAMESPACE)
+    ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+    root = ET.Element(
+        f"{{{XML_NAMESPACE}}}xmlszamla",
+        {f"{{http://www.w3.org/2001/XMLSchema-instance}}schemaLocation": (
+            f"{XML_NAMESPACE} https://www.szamlazz.hu/szamla/docs/xsds/agent/xmlszamla.xsd"
+        )},
+    )
+    settings = ET.SubElement(root, "beallitasok")
+    for name, value in (("szamlaagentkulcs", agent_key.strip()), ("eszamla", "true"),
+                        ("szamlaLetoltes", "true"), ("valaszVerzio", "2"),
+                        ("aggregator", ""), ("szamlaKulsoAzon", external_id)):
+        _text(settings, name, value)
+
+    header = ET.SubElement(root, "fejlec")
+    for name, value in (
+        ("keltDatum", invoice_date), ("teljesitesDatum", invoice_date),
+        ("fizetesiHataridoDatum", invoice_date),
+        ("fizmod", invoice.get("payment_method", "Online fizetés")),
+        ("penznem", str(invoice.get("currency", "HUF") or "HUF").upper()),
+        ("szamlaNyelve", invoice.get("language", "hu")),
+        ("megjegyzes", invoice.get("note", "")), ("arfolyamBank", "MNB"),
+        ("arfolyam", "0.0"), ("rendelesSzam", invoice.get("order_number", external_id)),
+        ("dijbekeroSzamlaszam", ""), ("elolegszamla", "false"),
+        ("vegszamla", "false"), ("helyesbitoszamla", "false"),
+        ("helyesbitettSzamlaszam", ""), ("dijbekero", "false"),
+        ("szamlaszamElotag", prefix.strip()),
+    ):
+        _text(header, name, value)
+
+    seller = ET.SubElement(root, "elado")
+    for name, value in (("bank", ""), ("bankszamlaszam", ""), ("emailReplyto", ""),
+                        ("emailTargy", invoice.get("email_subject", "Temu rendelés számlája")),
+                        ("emailSzoveg", invoice.get("email_body", "Köszönjük a vásárlást! A számlát mellékeltük."))):
+        _text(seller, name, value)
+
+    buyer_node = ET.SubElement(root, "vevo")
+    for name, value in (("nev", buyer.get("name", "")), ("orszag", buyer.get("country", "")),
+                        ("irsz", buyer.get("zip", "")), ("telepules", buyer.get("city", "")),
+                        ("cim", buyer.get("street", "")), ("email", buyer.get("email", ""))):
+        _text(buyer_node, name, value)
+    _text(buyer_node, "sendEmail", str(send_email and bool(buyer.get("email"))).lower())
+    tax_id = str(buyer.get("tax_id", "")).strip()
+    _text(buyer_node, "adoalany", "1" if tax_id else "-1")
+    _text(buyer_node, "adoszam", tax_id)
+
+    item_nodes = ET.SubElement(root, "tetelek")
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        quantity = _decimal(item.get("quantity", 0), "mennyiség")
+        net = _decimal(item.get("net", 0), "nettó érték")
+        vat = _decimal(item.get("vat", 0), "áfaérték")
+        gross = _decimal(item.get("gross", 0), "bruttó érték")
+        if quantity <= 0:
+            raise InvoiceError("A számla egyik tételének mennyisége hibás.")
+        if (net + vat).quantize(Decimal("0.01")) != gross.quantize(Decimal("0.01")):
+            raise InvoiceError("A Temu számlatétel nettó, áfa és bruttó összege nem egyezik.")
+        node = ET.SubElement(item_nodes, "tetel")
+        for name, value in (
+            ("megnevezes", item.get("name", "Temu tétel")),
+            ("mennyiseg", format(quantity, "f")), ("mennyisegiEgyseg", item.get("unit", "db")),
+            ("nettoEgysegar", format(net / quantity, "f")),
+            ("afakulcs", item.get("vat_rate", "27")), ("nettoErtek", _amount(net)),
+            ("afaErtek", _amount(vat)), ("bruttoErtek", _amount(gross)),
+            ("megjegyzes", item.get("note", "")),
+        ):
+            _text(node, name, value)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
 class SzamlazzClient:
     def __init__(self, config: AppConfig):
         self.config = config
@@ -269,6 +362,22 @@ class SzamlazzClient:
             self.config.values.get("SZAMLAZZ_INVOICE_PREFIX", ""),
             send_email,
         )
+        invoice_number, pdf = self._submit(xml)
+        return invoice_number, pdf, _billing_details(order)["email"]
+
+    def create_custom_invoice(self, invoice: dict, prefix: str = "") -> tuple[str, bytes, str]:
+        send_email = self.config.values.get("SZAMLAZZ_SEND_EMAIL", "false").lower() == "true"
+        xml = build_custom_invoice_xml(
+            invoice,
+            self.config.values.get("SZAMLAZZ_AGENT_KEY", ""),
+            prefix,
+            send_email,
+        )
+        invoice_number, pdf = self._submit(xml, max_pdf_size=8_000_000)
+        buyer = invoice.get("buyer") if isinstance(invoice.get("buyer"), dict) else {}
+        return invoice_number, pdf, str(buyer.get("email", ""))
+
+    def _submit(self, xml: bytes, *, max_pdf_size: int = 3_000_000) -> tuple[str, bytes]:
         boundary = "----AllegroSync" + uuid.uuid4().hex
         body = (
             f"--{boundary}\r\n"
@@ -315,9 +424,9 @@ class SzamlazzClient:
             raise InvoiceError("A Számlázz.hu hibás PDF-adatot adott vissza.") from exc
         if not pdf.startswith(b"%PDF"):
             raise InvoiceError("A Számlázz.hu válasza nem érvényes PDF.")
-        if len(pdf) > 3_000_000:
+        if len(pdf) > max_pdf_size:
             raise InvoiceError("A számla PDF nagyobb az Allegro 3 MB-os korlátjánál.")
-        return invoice_number, pdf, _billing_details(order)["email"]
+        return invoice_number, pdf
 
 
 class InvoiceService:
