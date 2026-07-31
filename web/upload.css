@@ -598,7 +598,8 @@
 
 .setting-title small,
 .setting-note,
-.setting-fields label small {
+.setting-fields label small,
+.tax-setting-field small {
   color: var(--muted);
   font-size: 9px;
 }
@@ -618,7 +619,8 @@
 }
 
 .setting-fields label,
-.preorder-date {
+.preorder-date,
+.tax-setting-field {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -626,20 +628,23 @@
 }
 
 .setting-fields label > span,
-.preorder-date > span {
+.preorder-date > span,
+.tax-setting-field > span {
   color: #565961;
   font-size: 10px;
   font-weight: 750;
 }
 
 .setting-fields b,
-.preorder-date b {
+.preorder-date b,
+.tax-setting-field b {
   color: var(--orange);
 }
 
 .setting-fields select,
 .setting-fields textarea,
-.preorder-date input {
+.preorder-date input,
+.tax-setting-field select {
   width: 100%;
   min-height: 40px;
   padding: 0 11px;
@@ -659,7 +664,8 @@
 
 .setting-fields select:focus,
 .setting-fields textarea:focus,
-.preorder-date input:focus {
+.preorder-date input:focus,
+.tax-setting-field select:focus {
   border-color: var(--orange);
   box-shadow: 0 0 0 3px var(--orange-soft);
 }
@@ -675,6 +681,10 @@
 
 .preorder-date {
   margin-top: 10px;
+}
+
+.tax-setting-field {
+  margin-top: 13px;
 }
 
 .setting-note {

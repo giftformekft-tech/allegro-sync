@@ -146,6 +146,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"import_id": import_id, "products": products})
             elif parsed.path == "/api/templates":
                 self._json({"templates": self.app.database.list_offer_templates()})
+            elif parsed.path == "/api/tax-settings":
+                query = urllib.parse.parse_qs(parsed.query)
+                category_id = query.get("category_id", [""])[0]
+                country_code = query.get("country_code", ["HU"])[0]
+                settings = self.app.offers.tax_settings(category_id, country_code)
+                self._json({
+                    "settings": settings,
+                    "default_id": self.app.offers.default_tax_setting_id(settings),
+                })
             elif parsed.path == "/api/categories/suggest":
                 query = urllib.parse.parse_qs(parsed.query)
                 self._json({"categories": self.app.catalog.suggest(query.get("q", [""])[0])})
@@ -309,6 +318,7 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("shipping_rate_id", "")), str(body.get("handling_time", "PT24H")),
                     str(body.get("shipment_date", "")), str(body.get("responsible_producer_id", "")),
                     str(body.get("responsible_person_id", "")), str(body.get("safety_information", "")),
+                    str(body.get("tax_setting_id", "")),
                 )
                 self._json({**preview, "environment": self.app.config.environment})
             elif self.path == "/api/offers/create":
@@ -321,6 +331,7 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("handling_time", "PT24H")), str(body.get("shipment_date", "")),
                     str(body.get("responsible_producer_id", "")),
                     str(body.get("responsible_person_id", "")), str(body.get("safety_information", "")),
+                    str(body.get("tax_setting_id", "")),
                 )
                 self._json(result)
             elif self.path == "/api/offers/bulk-preview":

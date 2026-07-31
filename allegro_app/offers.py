@@ -264,6 +264,7 @@ def build_offer_payload(
     responsible_producer_id: str | None = None,
     responsible_person_id: str | None = None,
     safety_information: str | None = None,
+    tax_setting: dict[str, str] | None = None,
 ) -> dict:
     if not product.get("image_url"):
         raise ValueError("A termékhez nincs kép URL, ezért nem tölthető fel.")
@@ -375,6 +376,18 @@ def build_offer_payload(
         "external": {"id": str(product["sku"])},
         "payments": {"invoice": "VAT"},
     }
+    if tax_setting:
+        tax_settings: dict[str, Any] = {
+            "rates": [{
+                "rate": str(tax_setting["rate"]),
+                "countryCode": str(tax_setting["country_code"]),
+            }],
+            "subject": str(tax_setting["subject"]),
+        }
+        exemption = str(tax_setting.get("exemption", "")).strip()
+        if exemption:
+            tax_settings["exemption"] = exemption
+        payload["taxSettings"] = tax_settings
     return payload
 
 
@@ -436,6 +449,70 @@ class OfferService:
             "responsible_persons": self.responsible_persons(),
         }
 
+    @staticmethod
+    def _tax_value(value: Any) -> str:
+        if isinstance(value, dict):
+            return str(value.get("id") or value.get("value") or value.get("name") or "")
+        return str(value or "")
+
+    def tax_settings(self, category_id: str, country_code: str = "HU") -> list[dict]:
+        category_id = category_id.strip()
+        country_code = country_code.strip().upper() or "HU"
+        if not category_id:
+            raise ValueError("Az áfakulcsok lekéréséhez hiányzik a kategória.")
+        body = self.client.request(
+            "GET",
+            "/sale/tax-settings",
+            query={"category.id": category_id, "countryCode": country_code},
+        )["body"]
+        result: list[dict] = []
+        for setting in body.get("settings", []):
+            if not isinstance(setting, dict) or not setting.get("id"):
+                continue
+            rate = self._tax_value(setting.get("rate"))
+            subject = self._tax_value(setting.get("subject"))
+            exemption = self._tax_value(setting.get("exemption"))
+            setting_country = str(setting.get("countryCode") or country_code).upper()
+            result.append({
+                "id": str(setting["id"]),
+                "country_code": setting_country,
+                "rate": rate,
+                "subject": subject,
+                "exemption": exemption,
+                "label": (
+                    f"{setting_country} · {rate}% · "
+                    f"{'termék' if subject.upper() == 'GOODS' else subject.lower()}"
+                    + (f" · {exemption}" if exemption else "")
+                ),
+            })
+        return result
+
+    @staticmethod
+    def default_tax_setting_id(settings: list[dict]) -> str:
+        for setting in settings:
+            rate = str(setting.get("rate", "")).replace("%", "").strip()
+            if (
+                rate in {"27", "27.0", "27.00"}
+                and str(setting.get("subject", "")).upper() == "GOODS"
+                and not str(setting.get("exemption", "")).strip()
+            ):
+                return str(setting.get("id", ""))
+        return ""
+
+    def resolve_tax_setting_id(
+        self, category_id: str, selected_id: str = "", country_code: str = "HU"
+    ) -> tuple[str, list[dict]]:
+        settings = self.tax_settings(category_id, country_code)
+        selected_id = selected_id.strip()
+        if selected_id:
+            if not any(setting["id"] == selected_id for setting in settings):
+                raise ValueError("A sablonban mentett áfakulcs már nem használható ebben a kategóriában.")
+            return selected_id, settings
+        default_id = self.default_tax_setting_id(settings)
+        if not default_id:
+            raise ValueError("Ehhez a kategóriához nem található magyar 27%-os termék-áfakulcs.")
+        return default_id, settings
+
     def _validate_account_choices(
         self,
         marketplace_id: str,
@@ -475,6 +552,7 @@ class OfferService:
         responsible_producer_id: str = "",
         responsible_person_id: str = "",
         safety_information: str = "",
+        tax_setting_id: str = "",
     ) -> dict:
         product = self.database.get_product(product_id)
         marketplace = self.marketplace()
@@ -484,6 +562,12 @@ class OfferService:
             )
         self._validate_account_choices(
             marketplace["id"], shipping_rate_id, responsible_producer_id, responsible_person_id
+        )
+        resolved_tax_setting_id, tax_settings = self.resolve_tax_setting_id(
+            str(category["id"]), tax_setting_id, "HU"
+        )
+        resolved_tax_setting = next(
+            setting for setting in tax_settings if setting["id"] == resolved_tax_setting_id
         )
         payload = build_offer_payload(
             product,
@@ -499,6 +583,7 @@ class OfferService:
             responsible_producer_id=responsible_producer_id,
             responsible_person_id=responsible_person_id,
             safety_information=safety_information,
+            tax_setting=resolved_tax_setting,
         )
         return {"payload": payload, "marketplace": marketplace}
 
@@ -516,13 +601,14 @@ class OfferService:
         responsible_producer_id: str = "",
         responsible_person_id: str = "",
         safety_information: str = "",
+        tax_setting_id: str = "",
     ) -> dict:
         if confirmation.strip().upper() != "FELTÖLTÉS":
             raise ValueError("A létrehozáshoz írd be pontosan: FELTÖLTÉS")
         preview = self.preview(
             product_id, category, selections, price_amount, stock_available,
             shipping_rate_id, handling_time, shipment_date, responsible_producer_id,
-            responsible_person_id, safety_information,
+            responsible_person_id, safety_information, tax_setting_id,
         )
         response = self.client.request("POST", "/sale/product-offers", body=preview["payload"])
         offer_id = self._offer_id(response)
@@ -573,8 +659,9 @@ class OfferService:
 
         marketplace = self.marketplace()
 
-        contexts: dict[str, tuple[dict, dict, dict[str, dict[str, str]]]] = {}
+        contexts: dict[str, tuple[dict, dict, dict[str, dict[str, str]], dict[str, str]]] = {}
         validated_choices: set[tuple[str, str, str]] = set()
+        tax_settings_cache: dict[str, list[dict]] = {}
         for product_type in product_types:
             try:
                 template_id = int(template_assignments[product_type])
@@ -587,6 +674,25 @@ class OfferService:
                 for rule in template.get("rules", [])
                 if isinstance(rule, dict) and rule.get("parameter_id")
             }
+            category_id = str(category["id"])
+            if category_id not in tax_settings_cache:
+                tax_settings_cache[category_id] = self.tax_settings(category_id, "HU")
+            selected_tax_id = str(rules.get("__tax_setting__", {}).get("value", "")).strip()
+            available_tax_settings = tax_settings_cache[category_id]
+            if selected_tax_id:
+                if not any(setting["id"] == selected_tax_id for setting in available_tax_settings):
+                    raise ValueError(
+                        f"A(z) {template['name']} sablonban mentett áfakulcs már nem használható."
+                    )
+            else:
+                selected_tax_id = self.default_tax_setting_id(available_tax_settings)
+            if not selected_tax_id:
+                raise ValueError(
+                    f"A(z) {template['name']} kategóriájában nem található magyar 27%-os termék-áfakulcs."
+                )
+            resolved_tax_setting = next(
+                setting for setting in available_tax_settings if setting["id"] == selected_tax_id
+            )
             preorder = rules.get("__preorder__", {}).get("value", "false").lower() == "true"
             if preorder:
                 raise ValueError(
@@ -603,11 +709,11 @@ class OfferService:
             if choice not in validated_choices:
                 self._validate_account_choices(marketplace["id"], *choice)
                 validated_choices.add(choice)
-            contexts[product_type] = (template, category, rules)
+            contexts[product_type] = (template, category, rules, resolved_tax_setting)
 
         if marketplace["currency"] != "HUF":
             product_price_types = [
-                product_type for product_type, (_, _, rules) in contexts.items()
+                product_type for product_type, (_, _, rules, _) in contexts.items()
                 if rules.get("__price__", {}).get("mode") != "fixed"
             ]
             if product_price_types:
@@ -623,7 +729,7 @@ class OfferService:
                 row["offer_id"] = product.get("allegro_offer_id")
                 rows.append(row)
                 continue
-            template, category, rules = contexts[str(product["type"])]
+            template, category, rules, tax_setting = contexts[str(product["type"])]
             try:
                 selections: dict[str, Any] = {}
                 for parameter in category.get("parameters", []):
@@ -665,6 +771,7 @@ class OfferService:
                     responsible_producer_id=str(rules.get("__producer__", {}).get("value", "")),
                     responsible_person_id=str(rules.get("__responsible_person__", {}).get("value", "")),
                     safety_information=str(rules.get("__safety_information__", {}).get("value", "")),
+                    tax_setting=tax_setting,
                 )
                 row = self._bulk_result(product, "ready")
                 row.update({"category_id": str(category["id"]), "template_name": template["name"]})

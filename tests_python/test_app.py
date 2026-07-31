@@ -456,6 +456,20 @@ class OfferPayloadTests(unittest.TestCase):
         )
         self.assertEqual(7, payload["stock"]["available"])
 
+    def test_tax_setting_id_is_sent_with_vat_invoice(self) -> None:
+        payload = self.build(
+            {"brand": "brand_forme", "condition": "new"},
+            tax_setting={
+                "id": "hu-27-goods", "rate": "27.00", "country_code": "HU",
+                "subject": "GOODS", "exemption": "",
+            },
+        )
+        self.assertEqual({"invoice": "VAT"}, payload["payments"])
+        self.assertEqual({
+            "rates": [{"rate": "27.00", "countryCode": "HU"}],
+            "subject": "GOODS",
+        }, payload["taxSettings"])
+
     def test_negative_template_stock_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "nem lehet negatív"):
             self.build(
@@ -501,6 +515,18 @@ class MarketplaceTests(unittest.TestCase):
                 }]}}
             if path == "/sale/responsible-persons":
                 return {"body": {"responsiblePersons": [{"id": "person-1", "name": "EU felelős"}]}}
+            if path == "/sale/tax-settings":
+                return {"body": {"settings": [
+                    {
+                        "id": "hu-27-margin", "countryCode": "HU",
+                        "rate": {"id": "27.00"}, "subject": {"id": "GOODS"},
+                        "exemption": {"id": "MARGIN_SCHEME"},
+                    },
+                    {
+                        "id": "hu-27-goods", "countryCode": "HU",
+                        "rate": {"id": "27.00"}, "subject": {"id": "GOODS"},
+                    },
+                ]}}
             return {
                 "body": {
                     "marketplaces": [{
@@ -533,12 +559,26 @@ class MarketplaceTests(unittest.TestCase):
             self.assertEqual("Forme", options["responsible_producers"][0]["name"])
             service._validate_account_choices("allegro-hu", "rate-1", "producer-1", "")
 
+    def test_reads_category_tax_settings_and_defaults_to_hungarian_27_percent_goods(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = OfferService(
+                AppConfig(root, {"ALLEGRO_LANGUAGE": "hu-HU"}),
+                Database(root / "state.sqlite"), self.Client(),
+            )
+            settings = service.tax_settings("123", "HU")
+            self.assertEqual("27.00", settings[0]["rate"])
+            self.assertEqual("GOODS", settings[0]["subject"])
+            self.assertEqual("MARGIN_SCHEME", settings[0]["exemption"])
+            self.assertEqual("hu-27-goods", service.default_tax_setting_id(settings))
+
 
 class BulkOfferTests(unittest.TestCase):
     class Client:
         def __init__(self) -> None:
             self.posts: list[str] = []
             self.prices: list[str] = []
+            self.tax_ids: list[str] = []
             self.fail_sku = "TEST-POLO-S"
 
         def request(self, method: str, path: str, **kwargs: object) -> dict:
@@ -547,6 +587,7 @@ class BulkOfferTests(unittest.TestCase):
                 sku = str(body["external"]["id"])  # type: ignore[index]
                 self.posts.append(sku)
                 self.prices.append(str(body["sellingMode"]["price"]["amount"]))  # type: ignore[index]
+                self.tax_ids.append(str(body["taxSettings"]["rates"][0]["rate"]))  # type: ignore[index]
                 if sku == self.fail_sku:
                     raise AllegroError("Allegro sorhiba")
                 return {"status": 201, "body": {"id": f"offer-{sku}"}, "headers": {}}
@@ -566,6 +607,11 @@ class BulkOfferTests(unittest.TestCase):
                 }]}}
             if path == "/sale/responsible-persons":
                 return {"body": {"responsiblePersons": []}}
+            if path == "/sale/tax-settings":
+                return {"body": {"settings": [{
+                    "id": "hu-27-goods", "countryCode": "HU",
+                    "rate": {"id": "27.00"}, "subject": {"id": "GOODS"},
+                }]}}
             raise AssertionError(path)
 
     def test_bulk_continues_after_error_and_retry_skips_successful_offer(self) -> None:
@@ -607,6 +653,7 @@ class BulkOfferTests(unittest.TestCase):
             self.assertEqual(1, retry["summary"]["skipped"])
             self.assertEqual(3, len(client.posts))
             self.assertEqual(["6490", "6490", "6490"], client.prices)
+            self.assertEqual(["27.00", "27.00", "27.00"], client.tax_ids)
 
 
 class InvoiceTests(unittest.TestCase):
