@@ -518,6 +518,9 @@ class OfferService:
             query={"category.id": category_id, "countryCode": country_code},
         )["body"]
         result: list[dict] = []
+
+        # Legacy public.v1 response. Keep supporting saved templates created
+        # while Allegro returned one immutable UUID for every VAT combination.
         for setting in body.get("settings", []):
             if not isinstance(setting, dict) or not setting.get("id"):
                 continue
@@ -537,6 +540,48 @@ class OfferService:
                     + (f" · {exemption}" if exemption else "")
                 ),
             })
+
+        if result:
+            return result
+
+        # Current response used by taxSettings: subjects, per-country rates
+        # and exemptions are returned separately, without a setting UUID.
+        subjects = [
+            self._tax_value(item.get("value"))
+            for item in body.get("subjects", [])
+            if isinstance(item, dict) and item.get("value") is not None
+        ]
+        exemptions = [
+            self._tax_value(item.get("value"))
+            for item in body.get("exemptions", [])
+            if isinstance(item, dict) and item.get("value") is not None
+        ]
+        for country_rates in body.get("rates", []):
+            if not isinstance(country_rates, dict):
+                continue
+            setting_country = str(country_rates.get("countryCode") or country_code).upper()
+            if setting_country != country_code:
+                continue
+            for rate_item in country_rates.get("values", []):
+                if not isinstance(rate_item, dict) or rate_item.get("value") is None:
+                    continue
+                rate = self._tax_value(rate_item.get("value"))
+                applicable_exemptions = exemptions if rate_item.get("exemptionRequired") else [""]
+                for subject in subjects:
+                    for exemption in applicable_exemptions:
+                        setting_id = "|".join((setting_country, rate, subject, exemption))
+                        result.append({
+                            "id": setting_id,
+                            "country_code": setting_country,
+                            "rate": rate,
+                            "subject": subject,
+                            "exemption": exemption,
+                            "label": (
+                                f"{setting_country} · {rate}% · "
+                                f"{'termék' if subject.upper() == 'GOODS' else subject.lower()}"
+                                + (f" · {exemption}" if exemption else "")
+                            ),
+                        })
         return result
 
     @staticmethod
