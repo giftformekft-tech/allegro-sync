@@ -51,6 +51,15 @@ body[data-platform="temu"] .temu-only.temu-wizard { display: grid; gap: 18px; }
 .temu-common-image img,.temu-common-image-preview { width: 52px; height: 52px; flex: 0 0 52px; border-radius: 9px; object-fit: cover; background: #e8e8e5; }
 .temu-common-image strong,.temu-common-image small { display: block; }
 .temu-common-image small { color: var(--muted); margin-top: 4px; }
+.temu-v3-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 13px; margin-top: 18px; }
+.temu-v3-grid .field { margin: 0; }
+.temu-v3-grid input,.temu-v3-grid select,.temu-publish-box input { width: 100%; height: 42px; border: 1px solid #dfe0e4; border-radius: 9px; padding: 0 11px; background: #fff; font: inherit; font-size: 11px; }
+.temu-publish-box { display: grid; grid-template-columns: minmax(220px,1fr) auto; align-items: end; gap: 12px; margin-top: 16px; padding: 15px; border-radius: 12px; background: #fafaf9; border: 1px solid var(--line); }
+.temu-publish-box .field { margin: 0; }
+.temu-upload-history { display: grid; gap: 9px; margin-top: 12px; }
+.temu-upload-row { display: grid; grid-template-columns: minmax(180px,1.4fr) 1fr auto auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; }
+.temu-upload-row strong,.temu-upload-row small { display: block; }
+.temu-upload-row small { color: var(--muted); margin-top: 3px; }
 .temu-size-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .temu-size-chips span { padding: 4px 7px; border-radius: 7px; background: #fff; border: 1px solid var(--line); font-size: 9px; font-weight: 750; }
 .temu-mapping-list { display: grid; gap: 10px; margin-top: 13px; }
@@ -82,6 +91,8 @@ body[data-platform="temu"] .primary:hover { background: #303238; }
   .platform-switch select { max-width: 72px; }
   .temu-category-results { grid-template-columns: 1fr; }
   .temu-parameter-columns { grid-template-columns: 1fr; }
+  .temu-v3-grid { grid-template-columns: 1fr; }
+  .temu-publish-box,.temu-upload-row { grid-template-columns: 1fr; }
   .temu-variant-row { grid-template-columns: auto 42px 1fr; }
   .temu-size-chips,.temu-variant-stock { grid-column: 3; }
 }

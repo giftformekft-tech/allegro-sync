@@ -18,6 +18,7 @@ from .importer import parse_csv
 from .invoices import InvoiceError, InvoiceService
 from .offers import OfferService, suggested_parameter_source, suggested_parameter_value
 from .temu import TemuClient, TemuError
+from .temu_products import TemuProductService
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,6 +60,10 @@ class Application:
     @property
     def temu(self) -> TemuClient:
         return TemuClient(self.config, self.database)
+
+    @property
+    def temu_products(self) -> TemuProductService:
+        return TemuProductService(self.database, self.temu)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -139,6 +144,8 @@ class Handler(BaseHTTPRequestHandler):
                     .removesuffix("/template").strip("/")
                 )
                 self._json({"template": self.app.temu.category_template(category_id)})
+            elif parsed.path == "/api/temu/uploads":
+                self._json({"uploads": self.app.database.list_temu_uploads()})
             elif parsed.path == "/api/marketplace":
                 self._json({"marketplace": self.app.offers.marketplace()})
             elif parsed.path == "/api/offer-options":
@@ -191,6 +198,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.app.auth.check_application())
             elif self.path == "/api/temu/check":
                 self._json(self.app.temu.check_connection())
+            elif self.path == "/api/temu/products/preview":
+                product_ids = body.get("product_ids") if isinstance(body.get("product_ids"), list) else []
+                options = body.get("options") if isinstance(body.get("options"), dict) else {}
+                self._json(self.app.temu_products.preview([int(value) for value in product_ids], options))
+            elif self.path == "/api/temu/products/create":
+                product_ids = body.get("product_ids") if isinstance(body.get("product_ids"), list) else []
+                options = body.get("options") if isinstance(body.get("options"), dict) else {}
+                result = self.app.temu_products.create(
+                    [int(value) for value in product_ids], options, str(body.get("confirmation", ""))
+                )
+                self._json(result, HTTPStatus.CREATED)
+            elif self.path.startswith("/api/temu/uploads/") and self.path.endswith("/refresh"):
+                upload_id = int(
+                    self.path.removeprefix("/api/temu/uploads/").removesuffix("/refresh").strip("/")
+                )
+                self._json(self.app.temu_products.refresh_status(upload_id))
             elif self.path == "/api/auth/device/start":
                 self._json(self.app.auth.start_device_flow())
             elif self.path == "/api/auth/device/poll":

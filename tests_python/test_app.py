@@ -25,6 +25,12 @@ from allegro_app.offers import (
 )
 from allegro_app.server import Application, AppServer
 from allegro_app.temu import TemuClient, sign_payload
+from allegro_app.temu_products import (
+    TEMU_PUBLISH_STATUS,
+    TEMU_V3_ADD,
+    TemuProductService,
+    build_temu_v3_payload,
+)
 
 
 SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;temu_common_image_url;length_cm;width_cm
@@ -685,6 +691,82 @@ class TemuTests(unittest.TestCase):
             self.assertEqual("22028", template["sales_properties"][0]["values"][0]["spec_id"])
             self.assertEqual("Material", template["properties"][0]["name"])
             self.assertEqual(0, template["properties"][0]["show_type"])
+
+
+class TemuProductTests(unittest.TestCase):
+    @staticmethod
+    def products() -> list[dict]:
+        base = {
+            "parent_sku": "POLO-ROBOT",
+            "name": "Robot mintás pamut póló",
+            "type": "Férfi póló",
+            "color": "Fekete",
+            "price_huf": "5990",
+            "stock": 10,
+            "common_image_url": "https://example.com/common.webp",
+            "description": "Pamut póló elülső nyomattal.",
+            "brand": "márkanév nélkül",
+            "material": "pamut",
+        }
+        return [
+            {**base, "sku": "POLO-ROBOT-S", "size": "S", "image_url": "https://example.com/s.webp"},
+            {**base, "sku": "POLO-ROBOT-M", "size": "M", "image_url": "https://example.com/m.webp"},
+        ]
+
+    def test_v3_payload_contains_required_sku_data_and_direct_images(self) -> None:
+        payload = build_temu_v3_payload(self.products(), {
+            "category_name": "Men's Clothing / T-Shirts",
+            "currency": "HUF",
+            "weight_g": "180",
+            "length_cm": "30",
+            "width_cm": "25",
+            "height_cm": "3",
+            "origin_country": "Hungary",
+        })
+        self.assertEqual("POLO-ROBOT", payload["goodsBasic"]["externalGoodsId"])
+        self.assertEqual("https://example.com/common.webp", payload["goodsBasic"]["goodsCarouselImage"][0])
+        self.assertEqual(2, len(payload["skuList"]))
+        self.assertEqual(["https://example.com/s.webp"], payload["skuList"][0]["images"])
+        self.assertEqual({"amount": "5990", "currency": "HUF"}, payload["skuList"][0]["price"]["basePrice"])
+        self.assertEqual("180", payload["skuList"][0]["packageInfo"]["weight"])
+        self.assertIn({"name": "Size", "value": "S"}, payload["skuList"][0]["variations"])
+        self.assertIn({"name": "Material", "value": ["pamut"]}, payload["attributes"])
+
+    def test_v3_payload_rejects_non_https_variant_image(self) -> None:
+        products = self.products()
+        products[0]["image_url"] = "http://example.com/s.webp"
+        with self.assertRaisesRegex(ValueError, "HTTPS-kép"):
+            build_temu_v3_payload(products, {"category_name": "T-Shirts"})
+
+    def test_service_creates_upload_and_refreshes_publish_status(self) -> None:
+        class Client:
+            def __init__(self):
+                self.calls: list[tuple[str, dict]] = []
+
+            def request(self, method: str, payload: dict) -> dict:
+                self.calls.append((method, payload))
+                if method == TEMU_V3_ADD:
+                    return {"success": True, "requestId": "req-add", "result": {"goodsId": 987654321}}
+                return {"success": True, "result": {"goodsPublishStatusList": [
+                    {"goodsId": 987654321, "status": "PUBLISHED", "subStatus": "ONLINE"}
+                ]}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "state.sqlite")
+            import_id = database.create_preview("sample.csv", parse_csv(SAMPLE))
+            database.commit_import(import_id)
+            product_id = database.list_products()[0]["id"]
+            client = Client()
+            service = TemuProductService(database, client)  # type: ignore[arg-type]
+            created = service.create([product_id], {"category_name": "Men's Clothing / T-Shirts"}, "FELTÖLTÉS")
+            upload_id = created["upload"]["id"]
+            refreshed = service.refresh_status(upload_id)
+
+            self.assertEqual(TEMU_V3_ADD, client.calls[0][0])
+            self.assertEqual(TEMU_PUBLISH_STATUS, client.calls[1][0])
+            self.assertEqual("987654321", created["goods_id"])
+            self.assertEqual("PUBLISHED", refreshed["status"])
+            self.assertEqual("status=PUBLISHED, subStatus=ONLINE", database.list_temu_uploads()[0]["status"])
 
 
 class WebAssetTests(unittest.TestCase):

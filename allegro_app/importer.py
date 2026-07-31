@@ -148,6 +148,7 @@ def parse_csv(content: str) -> list[dict]:
             problems.append("A készlet csak egész szám lehet.")
         image_url = get("image_url")
         common_image_url = get("common_image_url")
+        weight_g = get("weight_g")
 
         if not name:
             problems.append("Hiányzó terméknév.")
@@ -196,6 +197,7 @@ def parse_csv(content: str) -> list[dict]:
             "stock": stock,
             "image_url": image_url,
             "common_image_url": common_image_url,
+            "weight_g": weight_g,
             "length_cm": length_cm,
             "width_cm": width_cm,
             "problems": problems,

@@ -80,21 +80,38 @@
       <section class="view" id="view-upload">
         <div class="temu-only temu-wizard">
           <article class="card panel">
-            <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">TEMU KATEGÓRIA</span><h2>Élő kategóriafa</h2><p class="muted">A kategóriák és a mezők közvetlenül a Temu Open Platformból érkeznek.</p></div></div>
-            <div class="temu-category-toolbar"><button class="secondary" id="temuCategoryBack">← Vissza</button><button class="text-button" id="temuCategoryRoot">Főkategóriák</button><span id="temuBreadcrumb">Főkategóriák</span></div>
-            <div class="category-results temu-category-results" id="temuCategoryResults"><div class="wizard-empty">A Temu kategóriák betöltése…</div></div>
-          </article>
-          <article class="card panel hidden" id="temuTemplateInspector">
-            <div class="wizard-heading"><span class="step-number">2</span><div><span class="kicker">VARIÁNSOK ÉS PARAMÉTEREK</span><h2 id="temuCategoryName">Temu kategória</h2><p class="muted" id="temuTemplateSummary"></p></div><span class="badge neutral">Élő séma</span></div>
-            <div class="parameter-head"><div><h3>Exportálandó termékcsalád</h3><p class="muted">A szín–típus sorok minden elérhető mérete együtt marad.</p></div><select id="temuProductFamily"><option value="">Válassz importált termékcsaládot…</option></select></div>
+            <div class="wizard-heading"><span class="step-number">1</span><div><span class="kicker">TEMU V3</span><h2>Termékcsalád és variánsok</h2><p class="muted">A Temu V3 a WooCommerce saját típus-, szín- és méretértékeit automatikusan normalizálja.</p></div><span class="badge good">V3 API</span></div>
+            <div class="parameter-head"><div><h3>Feltöltendő termékcsalád</h3><p class="muted">Egy termékhez legfeljebb 500 SKU küldhető. A kijelölt típus–szín sor minden mérete együtt marad.</p></div><select id="temuProductFamily"><option value="">Válassz importált termékcsaládot…</option></select></div>
             <div class="temu-variant-rows" id="temuVariantRows"><div class="wizard-empty">Válassz termékcsaládot a variánsok megjelenítéséhez.</div></div>
-            <div class="temu-common-image empty" id="temuCommonImage"><span class="temu-common-image-preview"></span><div><strong>Közös termékkép</strong><small>A WooCommerce terméknél beállított, nem variánsfüggő Temu-kép itt jelenik meg.</small></div></div>
-            <div class="temu-parameter-columns">
-              <section><div class="parameter-head"><div><h3>Szín- és méretmegfeleltetés</h3><p class="muted">A WooCommerce értékét rendeld a Temu kategória engedélyezett értékéhez.</p></div></div><div id="temuSaleMappings" class="temu-mapping-list"></div></section>
-              <section><div class="parameter-head"><div><h3>Kötelező termékadatok</h3><p class="muted">Csak az élő kategóriaséma által kért mezők.</p></div></div><div id="temuRequiredProperties" class="temu-mapping-list"></div></section>
+            <div class="temu-common-image empty" id="temuCommonImage"><span class="temu-common-image-preview"></span><div><strong>Közös termékkép</strong><small>A WooCommerce terméknél beállított, nem variánsfüggő kép itt jelenik meg.</small></div></div>
+          </article>
+          <article class="card panel">
+            <div class="wizard-heading"><span class="step-number">2</span><div><span class="kicker">TERMÉKADATOK</span><h2>V3 feltöltési beállítások</h2><p class="muted">A Temu a kategóriát és attribútumokat a megadott saját elnevezésekből ajánlja és egészíti ki.</p></div></div>
+            <div class="temu-v3-grid">
+              <label class="field"><span>Terméknév *</span><input id="temuGoodsName" maxlength="500" placeholder="A Woo termékneve"></label>
+              <label class="field"><span>Kategória megnevezése *</span><input id="temuExternalCategory" maxlength="500" placeholder="pl. Men's Clothing / T-Shirts"></label>
+              <label class="field"><span>Pénznem *</span><input id="temuCurrency" maxlength="3" value="HUF"></label>
+              <label class="field"><span>Nyelv</span><input id="temuLanguage" maxlength="16" value="hu"></label>
+              <label class="field"><span>Terméktípus</span><select id="temuProductType"><option value="1">Normál termék</option><option value="2">Egyedileg készített</option><option value="3">Megrendelésre gyártott</option><option value="4">Használt</option></select></label>
+              <label class="field"><span>Feladási idő</span><select id="temuShipmentDays"><option value="1">1 nap</option><option value="2" selected>2 nap</option><option value="3">3 nap</option><option value="5">5 nap</option><option value="7">7 nap</option></select></label>
+              <label class="field"><span>Csomagsúly (g) *</span><input id="temuPackageWeight" inputmode="decimal" value="180"></label>
+              <label class="field"><span>Csomaghossz (cm) *</span><input id="temuPackageLength" inputmode="decimal" value="30"></label>
+              <label class="field"><span>Csomagszélesség (cm) *</span><input id="temuPackageWidth" inputmode="decimal" value="25"></label>
+              <label class="field"><span>Csomagmagasság (cm) *</span><input id="temuPackageHeight" inputmode="decimal" value="3"></label>
+              <label class="field"><span>Származási ország</span><input id="temuOriginCountry" maxlength="128" value="Hungary"></label>
+              <label class="field"><span>Gyártó</span><input id="temuManufacturer" maxlength="128" placeholder="A hivatalos gyártói név"></label>
             </div>
-            <div class="template-save"><div><strong>Feltöltési terv ellenőrzése</strong><small>Ez még nem küldi el a terméket a Temunak.</small></div><button class="primary" id="previewTemuSelection">Kiválasztás ellenőrzése</button></div>
-            <div class="payload-wrap hidden" id="temuSelectionWrap"><div class="payload-head"><strong>Temu feltöltési terv</strong><span>bg.local.goods.add előkészítés</span></div><pre id="temuSelectionPayload"></pre></div>
+          </article>
+          <article class="card panel">
+            <div class="wizard-heading"><span class="step-number">3</span><div><span class="kicker">ELLENŐRZÉS ÉS KÜLDÉS</span><h2>Temu termék létrehozása</h2><p class="muted">Az előnézet nem küld adatot. A tényleges gomb a hivatalos <code>temu.local.goods.v3.add</code> végpontot hívja.</p></div></div>
+            <div class="template-save"><div><strong>Payload ellenőrzése</strong><small>Kötelező mezők, árak, SKU-k, variációk és HTTPS-képek ellenőrzése.</small></div><button class="secondary" id="previewTemuSelection">Feltöltési terv</button></div>
+            <div class="payload-wrap hidden" id="temuSelectionWrap"><div class="payload-head"><strong>Temu V3 payload</strong><span>temu.local.goods.v3.add</span></div><pre id="temuSelectionPayload"></pre></div>
+            <div class="temu-publish-box"><label class="field"><span>Megerősítés</span><input id="temuConfirmation" placeholder="Írd be: FELTÖLTÉS"></label><button class="primary" id="createTemuProduct">Termék feltöltése a Temura</button></div>
+            <div class="notice hidden" id="temuUploadResult"></div>
+          </article>
+          <article class="card panel">
+            <div class="panel-head"><div><span class="kicker">TEMU NAPLÓ</span><h3>Legutóbbi API-feltöltések</h3></div><button class="text-button" id="refreshTemuUploads">Frissítés</button></div>
+            <div class="temu-upload-history" id="temuUploadHistory"><div class="wizard-empty">Még nincs API-feltöltés.</div></div>
           </article>
         </div>
         <div class="upload-wizard allegro-only">

@@ -32,13 +32,14 @@ Key, az App Secret és az Access Token, a Kapcsolatok oldalon pedig valódi
 Open Platform kéréssel tesztelhető a hozzáférés. A titkos értékeket a felület
 nem olvassa vissza.
 
-A **Temu feltöltés** oldalon az alkalmazás az élő kategóriafát és a kiválasztott
-végső kategória sablonját kéri le. A Temu által kötelezővé tett listás,
-szabadon beírható, többértékű, mértékegységes és gyakori feltételes mezőkből
-dinamikus űrlap készül. A WooCommerce színek és méretek a Temu engedélyezett
-variánsértékeihez rendelhetők; egy kiválasztott szín–típus sor minden importált
-mérete együtt kerül a feltöltési tervbe. A „Kiválasztás ellenőrzése” ebben a
-fázisban csak előnézetet készít, terméket még nem publikál.
+A **Temu feltöltés** oldal a Product Publishing API V3-at használja. Egy
+kiválasztott típus–szín sor minden importált mérete külön SKU-ként kerül a
+termékbe. A V3 a WooCommerce saját variánsértékeit normalizálja, a kategóriát
+pedig a megadott külső kategórianévből ajánlja. A felület ellenőrzi a kötelező
+ár-, készlet-, csomag- és képmezőket, megmutatja a pontos JSON-kérést, majd a
+`FELTÖLTÉS` megerősítéssel valóban létrehozza a terméket. A képek közvetlen,
+nyilvános HTTPS URL-ként kerülnek át; külön képfeltöltési lépés nincs.
+Részletek: [`docs/temu-v3-product-upload.md`](docs/temu-v3-product-upload.md).
 
 1. **Beállítások:** add meg a sandbox Client ID-t, Client Secretet és a
    szabályos User-Agentet.
@@ -94,6 +95,7 @@ forme.hu CSV ─► képfeltöltés ─► katalógustermék ─► ajánlat (in
 |---|---|
 | [`docs/allegro-integracio-terv.md`](docs/allegro-integracio-terv.md) | **A teljes fejlesztési terv** – architektúra, API-végpontok, fázisok, kockázatok |
 | [`docs/kezelo-felulet.md`](docs/kezelo-felulet.md) | A kattintásos alkalmazás telepítése, használata és jelenlegi határai |
+| [`docs/temu-v3-product-upload.md`](docs/temu-v3-product-upload.md) | A Temu V3 termékfeltöltés mezői, képei, biztonsága és hivatalos forrásai |
 | `Allegro Developer Portal - baza wiedzy o Allegro REST API.pdf` | A hivatalos OpenAPI-referencia (473 oldal, 279 végpont) |
 
 ## Rögzített keretek

@@ -50,6 +50,7 @@ class Database:
                     stock INTEGER NOT NULL,
                     image_url TEXT,
                     common_image_url TEXT NOT NULL DEFAULT '',
+                    weight_g TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '',
                     brand TEXT NOT NULL DEFAULT '',
                     material TEXT NOT NULL DEFAULT '',
@@ -59,6 +60,8 @@ class Database:
                     status TEXT NOT NULL DEFAULT 'draft',
                     category_id TEXT,
                     allegro_offer_id TEXT,
+                    temu_goods_id TEXT,
+                    temu_status TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS import_batches (
@@ -113,11 +116,24 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS temu_uploads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    external_goods_id TEXT NOT NULL,
+                    goods_id TEXT,
+                    status TEXT NOT NULL,
+                    request_id TEXT,
+                    payload TEXT NOT NULL,
+                    response TEXT,
+                    error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_columns(db, "products", {
                 "description": "TEXT NOT NULL DEFAULT ''",
                 "common_image_url": "TEXT NOT NULL DEFAULT ''",
+                "weight_g": "TEXT NOT NULL DEFAULT ''",
                 "brand": "TEXT NOT NULL DEFAULT ''",
                 "material": "TEXT NOT NULL DEFAULT ''",
                 "ai_content": "INTEGER NOT NULL DEFAULT 0",
@@ -125,6 +141,8 @@ class Database:
                 "width_cm": "TEXT NOT NULL DEFAULT ''",
                 "category_id": "TEXT",
                 "allegro_offer_id": "TEXT",
+                "temu_goods_id": "TEXT",
+                "temu_status": "TEXT NOT NULL DEFAULT ''",
             })
 
     @staticmethod
@@ -205,13 +223,14 @@ class Database:
                 db.execute(
                     """INSERT INTO products
                     (sku, parent_sku, name, title, type, color, size, price_huf, stock, image_url,
-                     common_image_url, description, brand, material, ai_content, length_cm, width_cm, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                     common_image_url, weight_g, description, brand, material, ai_content, length_cm, width_cm, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
                     ON CONFLICT(sku) DO UPDATE SET
                       parent_sku=excluded.parent_sku, name=excluded.name, title=excluded.title,
                       type=excluded.type, color=excluded.color, size=excluded.size,
                       price_huf=excluded.price_huf, stock=excluded.stock,
                       image_url=excluded.image_url, common_image_url=excluded.common_image_url,
+                      weight_g=excluded.weight_g,
                       description=excluded.description,
                       brand=excluded.brand, material=excluded.material, ai_content=excluded.ai_content,
                       length_cm=excluded.length_cm, width_cm=excluded.width_cm,
@@ -219,7 +238,7 @@ class Database:
                     (
                         row["sku"], row["parent_sku"], row["name"], row["title"], row["type"],
                         row["color"], row["size"], row["price_huf"], row["stock"],
-                        row["image_url"], row.get("common_image_url", ""),
+                        row["image_url"], row.get("common_image_url", ""), row.get("weight_g", ""),
                         row.get("description", ""), row.get("brand", ""),
                         row.get("material", ""), 1 if row.get("ai_content") else 0,
                         row.get("length_cm", ""), row.get("width_cm", ""), now_iso(),
@@ -249,6 +268,93 @@ class Database:
         if row is None:
             raise ValueError("A kiválasztott termék nem található.")
         return dict(row)
+
+    def get_products(self, product_ids: list[int]) -> list[dict[str, Any]]:
+        normalized = list(dict.fromkeys(int(product_id) for product_id in product_ids if int(product_id) > 0))
+        if not normalized:
+            raise ValueError("Válassz legalább egy termékváltozatot.")
+        placeholders = ",".join("?" for _ in normalized)
+        with self.connect() as db:
+            rows = db.execute(
+                f"SELECT * FROM products WHERE id IN ({placeholders})", normalized
+            ).fetchall()
+        found = {int(row["id"]): dict(row) for row in rows}
+        missing = [str(product_id) for product_id in normalized if product_id not in found]
+        if missing:
+            raise ValueError("Nem található termékváltozat: " + ", ".join(missing))
+        return [found[product_id] for product_id in normalized]
+
+    def record_temu_upload(
+        self, payload: dict[str, Any], response: dict[str, Any] | None, status: str, error: str
+    ) -> dict[str, Any]:
+        result = response.get("result") if response and isinstance(response.get("result"), dict) else {}
+        now = now_iso()
+        with self.connect() as db:
+            cursor = db.execute(
+                """INSERT INTO temu_uploads
+                (external_goods_id, goods_id, status, request_id, payload, response, error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(payload.get("goodsBasic", {}).get("externalGoodsId", "")),
+                    str(result.get("goodsId", "")) or None,
+                    status,
+                    str(response.get("requestId", "")) if response else "",
+                    json.dumps(payload, ensure_ascii=False),
+                    json.dumps(response, ensure_ascii=False) if response else None,
+                    error[:2000],
+                    now,
+                    now,
+                ),
+            )
+            upload_id = int(cursor.lastrowid)
+        return self.get_temu_upload(upload_id)
+
+    def get_temu_upload(self, upload_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM temu_uploads WHERE id = ?", (upload_id,)).fetchone()
+        if row is None:
+            raise ValueError("A Temu-feltöltési napló nem található.")
+        result = dict(row)
+        result["payload"] = json.loads(result["payload"])
+        result["response"] = json.loads(result["response"]) if result.get("response") else None
+        return result
+
+    def list_temu_uploads(self) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM temu_uploads ORDER BY id DESC LIMIT 50").fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item.pop("payload", None)
+            item.pop("response", None)
+            result.append(item)
+        return result
+
+    def mark_temu_created(self, product_ids: list[int], goods_id: str, status: str) -> None:
+        normalized = [int(product_id) for product_id in product_ids]
+        placeholders = ",".join("?" for _ in normalized)
+        with self.connect() as db:
+            db.execute(
+                f"UPDATE products SET temu_goods_id = ?, temu_status = ?, updated_at = ? WHERE id IN ({placeholders})",
+                [goods_id, status, now_iso(), *normalized],
+            )
+
+    def update_temu_upload_status(
+        self, upload_id: int, status: str, response: dict[str, Any]
+    ) -> dict[str, Any]:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE temu_uploads SET status = ?, response = ?, updated_at = ? WHERE id = ?",
+                (status, json.dumps(response, ensure_ascii=False), now_iso(), upload_id),
+            )
+        return self.get_temu_upload(upload_id)
+
+    def update_temu_product_status(self, goods_id: str, status: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE products SET temu_status = ?, updated_at = ? WHERE temu_goods_id = ?",
+                (status, now_iso(), goods_id),
+            )
 
     def mark_offer_created(self, product_id: int, category_id: str, offer_id: str | None) -> None:
         with self.connect() as db:
