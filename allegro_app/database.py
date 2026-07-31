@@ -45,6 +45,7 @@ class Database:
                     name TEXT NOT NULL,
                     title TEXT NOT NULL,
                     type TEXT NOT NULL,
+                    type_label TEXT NOT NULL DEFAULT '',
                     color TEXT NOT NULL,
                     size TEXT NOT NULL,
                     price_huf TEXT NOT NULL,
@@ -162,6 +163,7 @@ class Database:
             )
             self._ensure_columns(db, "products", {
                 "description": "TEXT NOT NULL DEFAULT ''",
+                "type_label": "TEXT NOT NULL DEFAULT ''",
                 "marketplace": "TEXT NOT NULL DEFAULT 'allegro'",
                 "common_image_url": "TEXT NOT NULL DEFAULT ''",
                 "weight_g": "TEXT NOT NULL DEFAULT ''",
@@ -264,13 +266,13 @@ class Database:
                 row = json.loads(record["payload"])
                 db.execute(
                     """INSERT INTO products
-                    (sku, marketplace, parent_sku, name, title, type, color, size, price_huf, stock, image_url,
+                    (sku, marketplace, parent_sku, name, title, type, type_label, color, size, price_huf, stock, image_url,
                      common_image_url, weight_g, description, brand, material, ai_content, length_cm, width_cm,
                      temu_category_name, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
                     ON CONFLICT(sku) DO UPDATE SET
                       marketplace=excluded.marketplace, parent_sku=excluded.parent_sku, name=excluded.name, title=excluded.title,
-                      type=excluded.type, color=excluded.color, size=excluded.size,
+                      type=excluded.type, type_label=excluded.type_label, color=excluded.color, size=excluded.size,
                       price_huf=excluded.price_huf, stock=excluded.stock,
                       image_url=excluded.image_url, common_image_url=excluded.common_image_url,
                       weight_g=excluded.weight_g,
@@ -281,6 +283,7 @@ class Database:
                       updated_at=excluded.updated_at""",
                     (
                         row["sku"], row.get("marketplace", "allegro"), row["parent_sku"], row["name"], row["title"], row["type"],
+                        row.get("type_label", ""),
                         row["color"], row["size"], row["price_huf"], row["stock"],
                         row["image_url"], row.get("common_image_url", ""), row.get("weight_g", ""),
                         row.get("description", ""), row.get("brand", ""),

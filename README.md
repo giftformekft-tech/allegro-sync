@@ -69,6 +69,11 @@ A pólók „Fő minta” paramétere alapból férfi/női terméknél „mintá
 (nyomatos)”, gyerekterméknél „nyomott mintás”. A „Nyomtatási terület”
 alapértéke „elülső”; mindegyik érték átírható és sablonba menthető.
 
+Ha a kategória tartalmaz `Modell` termékparamétert, a program a Woo közös
+terméknevéből, az olvasható típusnévből és a színből képezi az értékét. A
+méretet kihagyja, így egy szín teljes méretsora azonos modellt kap; a gyártói
+kód ettől függetlenül továbbra is a méretenkénti SKU.
+
 ### Temu rendelés és számlázás
 
 A Temu platformra váltva a **Rendelések** képernyő az EU Open Platform

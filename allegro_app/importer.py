@@ -191,6 +191,7 @@ def parse_csv(content: str) -> list[dict]:
             "parent_sku": get("parent_sku") or sku,
             "name": name,
             "title": title,
+            "type_label": get("type_label"),
             "description": description,
             "brand": get("brand"),
             "material": get("material"),

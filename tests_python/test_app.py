@@ -20,6 +20,7 @@ from allegro_app.offers import (
     OfferService,
     build_offer_payload,
     parameter_is_required,
+    product_model_name,
     sanitize_description_html,
     serialize_parameter,
     suggested_parameter_source,
@@ -133,6 +134,7 @@ class CsvTests(unittest.TestCase):
         self.assertEqual("70", rows[0]["length_cm"])
         self.assertEqual("50", rows[0]["width_cm"])
         self.assertEqual("https://example.com/common.webp", rows[0]["common_image_url"])
+        self.assertEqual("P\u00f3l\u00f3", rows[0]["type_label"])
         self.assertEqual("allegro", rows[0]["marketplace"])
         self.assertEqual(4, len(rows[1]["problems"]))
 
@@ -171,6 +173,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertIn("common_image_url", columns)
             self.assertIn("marketplace", columns)
             self.assertIn("temu_category_name", columns)
+            self.assertIn("type_label", columns)
 
     def test_commit_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -183,6 +186,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual("70", db.list_products()[0]["length_cm"])
             self.assertEqual("50", db.list_products()[0]["width_cm"])
             self.assertEqual("https://example.com/common.webp", db.list_products()[0]["common_image_url"])
+            self.assertEqual("P\u00f3l\u00f3", db.list_products()[0]["type_label"])
 
     def test_marketplace_imports_are_listed_separately(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -377,6 +381,25 @@ class OfferPayloadTests(unittest.TestCase):
         self.assertEqual("width_cm", suggested_parameter_source(adult_width))
         self.assertEqual("53", suggested_parameter_value(adult_width, self.product))
         self.assertEqual("length_cm", suggested_parameter_source(child_length))
+
+    def test_model_uses_common_name_type_and_color_without_size(self) -> None:
+        self.product.update({
+            "name": "M\u00c1V Megint \u00c1llunk humoros retr\u00f3 Vicces Meme",
+            "type": "ferfi-polo",
+            "type_label": "F\u00e9rfi p\u00f3l\u00f3",
+            "color": "fekete",
+            "size": "2XL",
+        })
+        parameter = {
+            "id": "237206", "name": "Modell", "type": "string",
+            "restrictions": {"maxLength": 50},
+        }
+        value = suggested_parameter_value(parameter, self.product)
+        self.assertEqual("model", suggested_parameter_source(parameter))
+        self.assertEqual("M\u00c1V Megint \u00c1llunk humoros retr\u00f3 F\u00e9rfi p\u00f3l\u00f3 fekete", value)
+        self.assertNotIn("2XL", value)
+        self.assertLessEqual(len(value), 50)
+        self.assertEqual(value, product_model_name(self.product, 50))
 
     def test_measurements_are_sent_as_product_parameters(self) -> None:
         for parameter_id, name in (
@@ -579,6 +602,7 @@ class BulkOfferTests(unittest.TestCase):
             self.posts: list[str] = []
             self.prices: list[str] = []
             self.tax_ids: list[str] = []
+            self.models: list[str] = []
             self.fail_sku = "TEST-POLO-S"
 
         def request(self, method: str, path: str, **kwargs: object) -> dict:
@@ -588,6 +612,9 @@ class BulkOfferTests(unittest.TestCase):
                 self.posts.append(sku)
                 self.prices.append(str(body["sellingMode"]["price"]["amount"]))  # type: ignore[index]
                 self.tax_ids.append(str(body["taxSettings"]["rates"][0]["rate"]))  # type: ignore[index]
+                parameters = body["productSet"][0]["product"]["parameters"]  # type: ignore[index]
+                model = next(item for item in parameters if item["id"] == "237206")
+                self.models.append(str(model["values"][0]))
                 if sku == self.fail_sku:
                     raise AllegroError("Allegro sorhiba")
                 return {"status": 201, "body": {"id": f"offer-{sku}"}, "headers": {}}
@@ -635,7 +662,12 @@ class BulkOfferTests(unittest.TestCase):
             ])
             category = {
                 "id": "123", "leaf": True, "offer_creation_enabled": True,
-                "product_creation_enabled": True, "parameters": [],
+                "product_creation_enabled": True, "parameters": [{
+                    "id": "237206", "name": "Modell", "type": "string",
+                    "required": False, "required_for_product": False,
+                    "describes_product": True, "is_gtin": False,
+                    "restrictions": {"maxLength": 50},
+                }],
             }
             client = self.Client()
             service = OfferService(AppConfig(root, {"ALLEGRO_LANGUAGE": "hu-HU"}), db, client)
@@ -654,6 +686,11 @@ class BulkOfferTests(unittest.TestCase):
             self.assertEqual(3, len(client.posts))
             self.assertEqual(["6490", "6490", "6490"], client.prices)
             self.assertEqual(["27.00", "27.00", "27.00"], client.tax_ids)
+            self.assertEqual([
+                "Vid\u00e1m ny\u00e1ri minta P\u00f3l\u00f3 Fekete",
+                "Vid\u00e1m ny\u00e1ri minta P\u00f3l\u00f3 Fekete",
+                "Vid\u00e1m ny\u00e1ri minta P\u00f3l\u00f3 Fekete",
+            ], client.models)
 
 
 class InvoiceTests(unittest.TestCase):

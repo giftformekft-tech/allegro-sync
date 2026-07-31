@@ -169,6 +169,8 @@ def suggested_parameter_source(parameter: dict) -> str | None:
     if parameter_id in DEFAULT_PARAMETER_VALUES:
         return "allegro_default"
     name = _fold(str(parameter.get("name", "")))
+    if name in {"model", "modell"}:
+        return "model"
     if any(word in name for word in ("marka", "brand")):
         return "brand"
     if any(word in name for word in ("kolor", "szin", "color")):
@@ -182,6 +184,32 @@ def suggested_parameter_source(parameter: dict) -> str | None:
     return None
 
 
+def product_model_name(product: dict, max_length: int = 50) -> str:
+    name = re.sub(r"\s+", " ", str(product.get("name", ""))).strip()
+    type_label = re.sub(
+        r"\s+", " ", str(product.get("type_label") or product.get("type", "")).replace("-", " ").replace("_", " ")
+    ).strip()
+    color = re.sub(r"\s+", " ", str(product.get("color", ""))).strip()
+    extras: list[str] = []
+    comparison = _fold(name)
+    for part in (type_label, color):
+        if part and _fold(part) not in comparison:
+            extras.append(part)
+            comparison = _fold(" ".join([name, *extras]))
+    suffix = " ".join(extras)
+    if suffix:
+        available = max_length - len(suffix) - 1
+        if available <= 0:
+            return suffix[:max_length].rstrip()
+        if len(name) > available:
+            shortened = name[:available]
+            if not shortened.endswith(" ") and not name[available].isspace() and " " in shortened:
+                shortened = shortened.rsplit(" ", 1)[0]
+            name = shortened.rstrip() or name[:available].rstrip()
+    model = " ".join(part for part in (name, suffix) if part)
+    return model[:max_length].rstrip()
+
+
 def suggested_parameter_value(parameter: dict, product: dict) -> str:
     default = DEFAULT_PARAMETER_VALUES.get(str(parameter.get("id", "")))
     if default:
@@ -192,7 +220,11 @@ def suggested_parameter_value(parameter: dict, product: dict) -> str:
         }
         return default if not dictionary_ids or default in dictionary_ids else ""
     source = suggested_parameter_source(parameter)
-    candidate = str(product.get(source, "")) if source else ""
+    if source == "model":
+        restrictions = parameter.get("restrictions") if isinstance(parameter.get("restrictions"), dict) else {}
+        candidate = product_model_name(product, int(restrictions.get("maxLength") or 50))
+    else:
+        candidate = str(product.get(source, "")) if source else ""
     dictionary = parameter.get("dictionary") or []
     if dictionary and candidate:
         folded = _fold(candidate)
