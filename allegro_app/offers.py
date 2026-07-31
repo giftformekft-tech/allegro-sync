@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+from html.parser import HTMLParser
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -33,6 +35,126 @@ DEFAULT_PARAMETER_VALUES = {
     "202497": "202497_680829",   # Child Fő minta: nyomott mintás
     "249926": "249926_1783211",  # Nyomtatási terület: elülső
 }
+
+
+class _AllegroDescriptionParser(HTMLParser):
+    """Convert ordinary WooCommerce HTML to Allegro's restricted HTML."""
+
+    BLOCK_TAGS = {"h1", "h2", "p", "ul", "ol", "li"}
+    TAG_MAP = {"strong": "b", "h3": "h2", "h4": "h2", "h5": "h2", "h6": "h2"}
+    BOUNDARY_TAGS = {
+        "address", "article", "aside", "blockquote", "div", "footer", "header",
+        "main", "nav", "section", "table", "tbody", "td", "tfoot", "th", "thead", "tr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.stack: list[str] = []
+
+    def _close(self, tag: str) -> None:
+        if tag not in self.stack:
+            return
+        while self.stack:
+            current = self.stack.pop()
+            self.parts.append(f"</{current}>")
+            if current == tag:
+                break
+
+    def _close_text_block(self) -> None:
+        for tag in reversed(self.stack):
+            if tag in {"p", "h1", "h2"}:
+                self._close(tag)
+                return
+            if tag in {"li", "ul", "ol"}:
+                return
+
+    def _inside(self, *tags: str) -> bool:
+        return any(tag in self.stack for tag in tags)
+
+    def _open_text_container(self) -> None:
+        if self._inside("p", "h1", "h2", "li"):
+            return
+        if self._inside("ul", "ol"):
+            self.parts.append("<li>")
+            self.stack.append("li")
+        else:
+            self.parts.append("<p>")
+            self.stack.append("p")
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        tag = self.TAG_MAP.get(tag.lower(), tag.lower())
+        if tag in {"script", "style"}:
+            self.stack.append(f"__skip_{tag}")
+            return
+        if any(item.startswith("__skip_") for item in self.stack):
+            return
+        if tag in {"h1", "h2", "p"}:
+            self._close_text_block()
+            self.parts.append(f"<{tag}>")
+            self.stack.append(tag)
+        elif tag in {"ul", "ol"}:
+            self._close_text_block()
+            self.parts.append(f"<{tag}>")
+            self.stack.append(tag)
+        elif tag == "li":
+            self._close("li")
+            if not self._inside("ul", "ol"):
+                self.parts.append("<ul>")
+                self.stack.append("ul")
+            self.parts.append("<li>")
+            self.stack.append("li")
+        elif tag == "b":
+            if self._inside("h1", "h2"):
+                return
+            self._open_text_container()
+            if not self._inside("b"):
+                self.parts.append("<b>")
+                self.stack.append("b")
+        elif tag == "br":
+            self.parts.append(" ")
+        elif tag in self.BOUNDARY_TAGS:
+            self._close_text_block()
+
+    def handle_endtag(self, tag: str) -> None:
+        raw_tag = tag.lower()
+        skip_tag = f"__skip_{raw_tag}"
+        if skip_tag in self.stack:
+            while self.stack:
+                current = self.stack.pop()
+                if current == skip_tag:
+                    break
+            return
+        if any(item.startswith("__skip_") for item in self.stack):
+            return
+        tag = self.TAG_MAP.get(raw_tag, raw_tag)
+        if tag in self.BLOCK_TAGS or tag == "b":
+            self._close(tag)
+        elif tag in self.BOUNDARY_TAGS:
+            self._close_text_block()
+
+    def handle_data(self, data: str) -> None:
+        if any(item.startswith("__skip_") for item in self.stack):
+            return
+        if not data.strip() and not self._inside("p", "h1", "h2", "li", "b"):
+            return
+        self._open_text_container()
+        self.parts.append(html.escape(data, quote=False))
+
+    def result(self) -> str:
+        while self.stack:
+            current = self.stack.pop()
+            if not current.startswith("__skip_"):
+                self.parts.append(f"</{current}>")
+        return "".join(self.parts).strip()
+
+
+def sanitize_description_html(value: str) -> str:
+    parser = _AllegroDescriptionParser()
+    parser.feed(value)
+    parser.close()
+    return parser.result()
 
 
 def _fold(value: str) -> str:
@@ -121,11 +243,9 @@ def parameter_is_required(parameter: dict, selections: dict[str, Any]) -> bool:
 
 
 def _description(value: str) -> dict:
-    content = value.strip()
+    content = sanitize_description_html(value.strip())
     if not content:
         content = "<p>Termékadatok feltöltése folyamatban.</p>"
-    elif not re.search(r"<(p|ul|ol|h1|h2)\b", content, re.IGNORECASE):
-        content = f"<p>{content}</p>"
     return {"sections": [{"items": [{"type": "TEXT", "content": content}]}]}
 
 

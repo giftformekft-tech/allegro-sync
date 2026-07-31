@@ -19,6 +19,7 @@ from allegro_app.offers import (
     OfferService,
     build_offer_payload,
     parameter_is_required,
+    sanitize_description_html,
     serialize_parameter,
     suggested_parameter_source,
     suggested_parameter_value,
@@ -103,6 +104,24 @@ class TitleBuilderTests(unittest.TestCase):
         self.assertLessEqual(len(title), 75)
         self.assertFalse(title.endswith("nag"))
         self.assertIsNone(problem)
+
+
+class AllegroDescriptionTests(unittest.TestCase):
+    def test_converts_woocommerce_html_to_supported_allegro_tags(self) -> None:
+        source = (
+            '<div class="woocommerce"><p><strong>Anyag:</strong> 100% pamut<br>Sima felület</p>'
+            '<h3 style="color:red"><span>Méretadatok</span></h3><script>bad()</script></div>'
+        )
+
+        result = sanitize_description_html(source)
+
+        self.assertEqual(
+            "<p><b>Anyag:</b> 100% pamut Sima felület</p><h2>Méretadatok</h2>",
+            result,
+        )
+        self.assertNotIn("strong", result)
+        self.assertNotIn("span", result)
+        self.assertNotIn("script", result)
 
 
 class CsvTests(unittest.TestCase):
