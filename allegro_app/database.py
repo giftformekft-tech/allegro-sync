@@ -145,6 +145,19 @@ class Database:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (parent_order_sn, document_key)
                 );
+                CREATE TABLE IF NOT EXISTS temu_shipments (
+                    parent_order_sn TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    parcel_number TEXT,
+                    carrier_id TEXT,
+                    label_path TEXT,
+                    temu_request TEXT,
+                    express_response TEXT,
+                    temu_response TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_columns(db, "products", {
@@ -163,6 +176,16 @@ class Database:
                 "temu_status": "TEXT NOT NULL DEFAULT ''",
                 "temu_category_name": "TEXT NOT NULL DEFAULT ''",
             })
+
+    @staticmethod
+    def _decode_json_columns(row: sqlite3.Row | None, columns: tuple[str, ...]) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        result = dict(row)
+        for column in columns:
+            value = result.get(column)
+            result[column] = json.loads(value) if value else None
+        return result
 
     @staticmethod
     def _ensure_columns(db: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
@@ -599,3 +622,66 @@ class Database:
         if row is None:
             raise RuntimeError("A Temu-számla állapotának mentése nem sikerült.")
         return dict(row)
+
+    def get_temu_shipment(self, parent_order_sn: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM temu_shipments WHERE parent_order_sn = ?", (parent_order_sn,)
+            ).fetchone()
+        return self._decode_json_columns(row, ("temu_request", "express_response", "temu_response"))
+
+    def list_temu_shipments(self) -> dict[str, dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM temu_shipments ORDER BY created_at DESC").fetchall()
+        return {
+            str(row["parent_order_sn"]): self._decode_json_columns(
+                row, ("temu_request", "express_response", "temu_response")
+            ) or {}
+            for row in rows
+        }
+
+    def save_temu_shipment(
+        self,
+        parent_order_sn: str,
+        *,
+        status: str,
+        parcel_number: str | None = None,
+        carrier_id: str | None = None,
+        label_path: str | None = None,
+        temu_request: dict[str, Any] | None = None,
+        express_response: dict[str, Any] | None = None,
+        temu_response: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO temu_shipments
+                (parent_order_sn, status, parcel_number, carrier_id, label_path, temu_request,
+                 express_response, temu_response, error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(parent_order_sn) DO UPDATE SET
+                  status=excluded.status,
+                  parcel_number=COALESCE(excluded.parcel_number, temu_shipments.parcel_number),
+                  carrier_id=COALESCE(excluded.carrier_id, temu_shipments.carrier_id),
+                  label_path=COALESCE(excluded.label_path, temu_shipments.label_path),
+                  temu_request=COALESCE(excluded.temu_request, temu_shipments.temu_request),
+                  express_response=COALESCE(excluded.express_response, temu_shipments.express_response),
+                  temu_response=COALESCE(excluded.temu_response, temu_shipments.temu_response),
+                  error=excluded.error,
+                  updated_at=excluded.updated_at""",
+                (
+                    parent_order_sn, status, parcel_number, carrier_id, label_path,
+                    json.dumps(temu_request, ensure_ascii=False) if temu_request is not None else None,
+                    json.dumps(express_response, ensure_ascii=False) if express_response is not None else None,
+                    json.dumps(temu_response, ensure_ascii=False) if temu_response is not None else None,
+                    error, timestamp, timestamp,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM temu_shipments WHERE parent_order_sn = ?", (parent_order_sn,)
+            ).fetchone()
+        result = self._decode_json_columns(row, ("temu_request", "express_response", "temu_response"))
+        if result is None:
+            raise RuntimeError("A Temu-szállítás állapotának mentése nem sikerült.")
+        return result

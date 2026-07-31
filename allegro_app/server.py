@@ -21,6 +21,8 @@ from .offers import OfferService, suggested_parameter_source, suggested_paramete
 from .temu import TemuClient, TemuError
 from .temu_products import TemuProductService
 from .temu_invoices import TemuInvoiceService
+from .express_one import ExpressOneError
+from .temu_shipping import TemuShippingError, TemuShippingService
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -70,6 +72,10 @@ class Application:
     @property
     def temu_invoices(self) -> TemuInvoiceService:
         return TemuInvoiceService(self.config, self.database, self.temu)
+
+    @property
+    def temu_shipping(self) -> TemuShippingService:
+        return TemuShippingService(self.config, self.database, self.temu)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -166,6 +172,17 @@ class Handler(BaseHTTPRequestHandler):
                     parsed.path.removeprefix("/api/temu/invoice-files/").removesuffix(".pdf")
                 )
                 self._temu_invoice_file(token)
+            elif parsed.path.startswith("/api/temu/orders/") and parsed.path.endswith("/shipment-preview"):
+                order_id = urllib.parse.unquote(
+                    parsed.path.removeprefix("/api/temu/orders/").removesuffix("/shipment-preview").strip("/")
+                )
+                query = urllib.parse.parse_qs(parsed.query)
+                self._json(self.app.temu_shipping.preview(order_id, query.get("weight_kg", [None])[0]))
+            elif parsed.path.startswith("/api/temu/orders/") and parsed.path.endswith("/label.pdf"):
+                order_id = urllib.parse.unquote(
+                    parsed.path.removeprefix("/api/temu/orders/").removesuffix("/label.pdf").strip("/")
+                )
+                self._temu_label_file(order_id)
             elif parsed.path == "/api/marketplace":
                 self._json({"marketplace": self.app.offers.marketplace()})
             elif parsed.path == "/api/offer-options":
@@ -178,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._static(parsed.path)
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
-        except (ValueError, AllegroError, InvoiceError, TemuError) as exc:
+        except (ValueError, AllegroError, InvoiceError, TemuError, ExpressOneError, TemuShippingError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -218,6 +235,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.app.auth.check_application())
             elif self.path == "/api/temu/check":
                 self._json(self.app.temu.check_connection())
+            elif self.path == "/api/express-one/check":
+                self._json(self.app.temu_shipping.check_connection())
             elif self.path == "/api/temu/products/preview":
                 product_ids = body.get("product_ids") if isinstance(body.get("product_ids"), list) else []
                 options = body.get("options") if isinstance(body.get("options"), dict) else {}
@@ -244,6 +263,18 @@ class Handler(BaseHTTPRequestHandler):
                     self.path.removeprefix("/api/temu/orders/").removesuffix("/platform-address/approve").strip("/")
                 )
                 self._json(self.app.temu_invoices.approve_platform_address(order_id))
+            elif self.path.startswith("/api/temu/orders/") and self.path.endswith("/shipment"):
+                order_id = urllib.parse.unquote(
+                    self.path.removeprefix("/api/temu/orders/").removesuffix("/shipment").strip("/")
+                )
+                self._json(self.app.temu_shipping.create(
+                    order_id, body.get("weight_kg"), str(body.get("confirmation", ""))
+                ), HTTPStatus.CREATED)
+            elif self.path.startswith("/api/temu/orders/") and self.path.endswith("/tracking"):
+                order_id = urllib.parse.unquote(
+                    self.path.removeprefix("/api/temu/orders/").removesuffix("/tracking").strip("/")
+                )
+                self._json(self.app.temu_shipping.refresh_tracking(order_id))
             elif self.path == "/api/auth/device/start":
                 self._json(self.app.auth.start_device_flow())
             elif self.path == "/api/auth/device/poll":
@@ -280,7 +311,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "Ismeretlen API végpont."}, HTTPStatus.NOT_FOUND)
         except AllegroApiError as exc:
             self._json({"error": str(exc), "details": exc.details}, exc.status)
-        except (ValueError, AllegroError, InvoiceError, TemuError) as exc:
+        except (ValueError, AllegroError, InvoiceError, TemuError, ExpressOneError, TemuShippingError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._json({"error": f"Váratlan hiba: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -328,11 +359,19 @@ class Handler(BaseHTTPRequestHandler):
                 "temu_platform_street": "TEMU_PLATFORM_STREET",
                 "temu_platform_tax_id": "TEMU_PLATFORM_TAX_ID",
                 "temu_platform_email": "TEMU_PLATFORM_EMAIL",
+                "express_one_endpoint": "EXPRESS_ONE_ENDPOINT",
+                "express_one_company_id": "EXPRESS_ONE_COMPANY_ID",
+                "express_one_user_name": "EXPRESS_ONE_USER_NAME",
+                "express_one_password": "EXPRESS_ONE_PASSWORD",
+                "express_one_default_weight_kg": "EXPRESS_ONE_DEFAULT_WEIGHT_KG",
+                "temu_express_one_carrier_id": "TEMU_EXPRESS_ONE_CARRIER_ID",
             }
             updates = {
                 env_key: str(body[key])
                 for key, env_key in mapping.items()
-                if key in body and str(body[key]).strip() != ""
+                if key in body and (
+                    str(body[key]).strip() != "" or env_key == "TEMU_EXPRESS_ONE_CARRIER_ID"
+                )
             }
             environment = updates.get("ALLEGRO_ENV", self.app.config.environment)
             if environment not in {"sandbox", "production"}:
@@ -376,6 +415,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Disposition", 'inline; filename="invoice.pdf"')
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "private, max-age=300")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _temu_label_file(self, order_id: str) -> None:
+        if not re.fullmatch(r"PO-[A-Za-z0-9-]{3,80}", order_id):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        record = self.app.database.get_temu_shipment(order_id)
+        target = Path(str(record.get("label_path", ""))) if record else None
+        labels_root = (self.app.root / "var" / "labels" / "temu").resolve()
+        if not target or not target.is_file() or not target.resolve().is_relative_to(labels_root):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        body = target.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'inline; filename="express-one-{order_id}.pdf"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "private, no-store")
         self.end_headers()
         self.wfile.write(body)
 

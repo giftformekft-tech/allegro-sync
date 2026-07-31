@@ -31,6 +31,12 @@ ENV_KEYS = (
     "TEMU_PLATFORM_TAX_ID",
     "TEMU_PLATFORM_EMAIL",
     "TEMU_PLATFORM_APPROVED_ADDRESS",
+    "EXPRESS_ONE_ENDPOINT",
+    "EXPRESS_ONE_COMPANY_ID",
+    "EXPRESS_ONE_USER_NAME",
+    "EXPRESS_ONE_PASSWORD",
+    "EXPRESS_ONE_DEFAULT_WEIGHT_KG",
+    "TEMU_EXPRESS_ONE_CARRIER_ID",
 )
 
 
@@ -56,6 +62,8 @@ class AppConfig:
             "INVOICE_DRIVER": "none",
             "SZAMLAZZ_SEND_EMAIL": "false",
             "SZAMLAZZ_TEMU_INVOICE_PREFIX": "",
+            "EXPRESS_ONE_ENDPOINT": "https://webservice.expressone.hu",
+            "EXPRESS_ONE_DEFAULT_WEIGHT_KG": "1",
         }
         source = root / ".env"
         if not source.exists():
@@ -122,6 +130,15 @@ class AppConfig:
                 self.values.get("INVOICE_DRIVER") == "szamlazz"
                 and bool(self.values.get("SZAMLAZZ_AGENT_KEY", ""))
             ),
+            "express_one_endpoint": self.values.get(
+                "EXPRESS_ONE_ENDPOINT", "https://webservice.expressone.hu"
+            ),
+            "express_one_company_id": self.values.get("EXPRESS_ONE_COMPANY_ID", ""),
+            "express_one_user_name": self.values.get("EXPRESS_ONE_USER_NAME", ""),
+            "express_one_password_set": bool(self.values.get("EXPRESS_ONE_PASSWORD", "")),
+            "express_one_default_weight_kg": self.values.get("EXPRESS_ONE_DEFAULT_WEIGHT_KG", "1"),
+            "temu_express_one_carrier_id": self.values.get("TEMU_EXPRESS_ONE_CARRIER_ID", ""),
+            "express_one_ready": not self.express_one_validation(),
         }
 
     def validation(self) -> list[str]:
@@ -149,6 +166,26 @@ class AppConfig:
             problems.append("Hiányzik a Temu App Secret.")
         if not self.values.get("TEMU_ACCESS_TOKEN"):
             problems.append("Hiányzik a Temu Access Token.")
+        return problems
+
+    def express_one_validation(self) -> list[str]:
+        problems: list[str] = []
+        endpoint = self.values.get("EXPRESS_ONE_ENDPOINT", "https://webservice.expressone.hu")
+        parsed = urlparse(endpoint)
+        if parsed.scheme != "https" or not parsed.netloc:
+            problems.append("Az Express One API-végpontnak érvényes HTTPS-címnek kell lennie.")
+        if not self.values.get("EXPRESS_ONE_COMPANY_ID"):
+            problems.append("Hiányzik az Express One Company ID.")
+        if not self.values.get("EXPRESS_ONE_USER_NAME"):
+            problems.append("Hiányzik az Express One felhasználónév.")
+        if not self.values.get("EXPRESS_ONE_PASSWORD"):
+            problems.append("Hiányzik az Express One jelszó.")
+        try:
+            weight = float(self.values.get("EXPRESS_ONE_DEFAULT_WEIGHT_KG", "1"))
+            if weight <= 0 or weight > 40:
+                raise ValueError
+        except ValueError:
+            problems.append("Az Express One alapértelmezett tömeg 0 és 40 kg közötti szám legyen.")
         return problems
 
     def save(self, updates: dict[str, str]) -> None:

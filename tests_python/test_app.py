@@ -39,6 +39,13 @@ from allegro_app.temu_invoices import (
     TemuInvoiceService,
     _platform_address_parts,
 )
+from allegro_app.temu_shipping import (
+    TEMU_LOGISTICS_COMPANIES,
+    TEMU_ORDER_DETAIL,
+    TEMU_ORDER_SHIPPING as TEMU_SHIPMENT_ADDRESS,
+    TEMU_SHIPMENT_CONFIRM,
+    TemuShippingService,
+)
 
 
 SAMPLE = """sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;temu_common_image_url;length_cm;width_cm
@@ -718,6 +725,130 @@ class TemuInvoiceTests(unittest.TestCase):
             self.assertTrue(temu.last_upload["request"]["fileUrl"].startswith("https://sync.example.com/"))
 
 
+class TemuShippingTests(unittest.TestCase):
+    @staticmethod
+    def order_detail() -> dict:
+        return {"result": {
+            "parentOrderMap": {"parentOrderSn": "PO-211-123456", "regionId": 211},
+            "orderList": [{
+                "orderSn": "211-123456-1", "quantity": 2, "goodsId": 602437528187338,
+                "skuId": 46301894981050, "goodsName": "Pamut póló",
+            }],
+        }}
+
+    @staticmethod
+    def address() -> dict:
+        return {"result": {
+            "receiptName": "Minta Vevő", "mail": "buyer@temumail.com", "mobile": "06301234567",
+            "regionName1": "Magyarország", "regionName3": "Budapest",
+            "postCode": "1011", "addressLineAll": "Fő utca 1.",
+        }}
+
+    def test_express_one_label_is_created_once_and_tracking_is_sent_to_temu(self) -> None:
+        import base64
+
+        class Temu:
+            confirmations = 0
+
+            @staticmethod
+            def _result(response: dict) -> dict:
+                return response["result"]
+
+            def request(self, api_type: str, parameters: dict | None = None) -> dict:
+                if api_type == TEMU_ORDER_DETAIL:
+                    return TemuShippingTests.order_detail()
+                if api_type == TEMU_SHIPMENT_ADDRESS:
+                    return TemuShippingTests.address()
+                if api_type == TEMU_LOGISTICS_COMPANIES:
+                    return {"result": {"companies": [{"shipCompanyId": 7788, "shipCompanyName": "Express One Hungary"}]}}
+                if api_type == TEMU_SHIPMENT_CONFIRM:
+                    self.confirmations += 1
+                    self.last_confirmation = parameters
+                    return {"result": {"success": True}}
+                raise AssertionError(api_type)
+
+        class ExpressOne:
+            labels = 0
+
+            def create_labels(self, deliveries: list[dict]) -> dict:
+                self.labels += 1
+                self.delivery = deliveries[0]
+                return {"response": {"deliveries": [{"code": "0", "data": {
+                    "parcel_numbers": ["123456789"]}}], "labels": {
+                    "data": base64.b64encode(b"%PDF-1.4 test").decode()
+                }}}
+
+            @staticmethod
+            def parcel_status(parcel_number: str) -> dict:
+                return {"response": {"state": "Kézbesítés alatt", "parcel_number": parcel_number}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = AppConfig(root, {"EXPRESS_ONE_DEFAULT_WEIGHT_KG": "0.4"})
+            database = Database(root / "state.sqlite")
+            temu = Temu()
+            service = TemuShippingService(config, database, temu)  # type: ignore[arg-type]
+            express = ExpressOne()
+            service.express_one = express  # type: ignore[assignment]
+            preview = service.preview("PO-211-123456", "0.4")
+            self.assertEqual("HU", preview["recipient"]["country"])
+            self.assertEqual("+36301234567", preview["recipient"]["phone"])
+            result = service.create("PO-211-123456", "0.4", "FELADÁS")
+            again = service.create("PO-211-123456", "9", "FELADÁS")
+            self.assertEqual("temu_confirmed", result["status"])
+            self.assertEqual("123456789", again["parcel_number"])
+            self.assertEqual(1, express.labels)
+            self.assertEqual(1, temu.confirmations)
+            sent = temu.last_confirmation["sendRequestList"][0]
+            self.assertEqual(7788, sent["carrierId"])
+            self.assertEqual("123456789", sent["trackingNumber"])
+            self.assertEqual(2, sent["orderSendInfoList"][0]["quantity"])
+            self.assertTrue(Path(str(result["label_path"])).is_file())
+            self.assertEqual("Kézbesítés alatt", service.refresh_tracking("PO-211-123456")["tracking"]["response"]["state"])
+
+    def test_failed_temu_confirmation_reuses_existing_label(self) -> None:
+        import base64
+
+        class Temu:
+            fail = True
+
+            @staticmethod
+            def _result(response: dict) -> dict:
+                return response["result"]
+
+            def request(self, api_type: str, parameters: dict | None = None) -> dict:
+                if api_type == TEMU_ORDER_DETAIL:
+                    return TemuShippingTests.order_detail()
+                if api_type == TEMU_SHIPMENT_ADDRESS:
+                    return TemuShippingTests.address()
+                if api_type == TEMU_LOGISTICS_COMPANIES:
+                    return {"result": {"companies": [{"carrierId": 99, "name": "ExpressOne"}]}}
+                if api_type == TEMU_SHIPMENT_CONFIRM:
+                    return {"result": {"success": not self.fail, "errorMsg": "temporary"}}
+                raise AssertionError(api_type)
+
+        class ExpressOne:
+            labels = 0
+
+            def create_labels(self, deliveries: list[dict]) -> dict:
+                self.labels += 1
+                return {"parcelNumber": "EONE-1", "labelData": base64.b64encode(b"%PDF test").decode()}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = Database(root / "state.sqlite")
+            temu = Temu()
+            service = TemuShippingService(AppConfig(root, {"EXPRESS_ONE_DEFAULT_WEIGHT_KG": "1"}), database, temu)  # type: ignore[arg-type]
+            express = ExpressOne()
+            service.express_one = express  # type: ignore[assignment]
+            with self.assertRaisesRegex(RuntimeError, "temporary"):
+                service.create("PO-211-123456", 1, "FELADÁS")
+            self.assertEqual("temu_failed", database.get_temu_shipment("PO-211-123456")["status"])
+            temu.fail = False
+            self.assertEqual("temu_confirmed", service.create("PO-211-123456", 1, "FELADÁS")["status"])
+            self.assertEqual(1, express.labels)
+
+
 class TemuTests(unittest.TestCase):
     def test_sign_payload_has_stable_uppercase_signature(self) -> None:
         payload = {
@@ -951,7 +1082,7 @@ class ConfigTests(unittest.TestCase):
             (root / ".env").write_text(
                 'ALLEGRO_ENV="sandbox"\nALLEGRO_CLIENT_SECRET="top-secret"\n'
                 'TEMU_APP_KEY="public-app"\nTEMU_APP_SECRET="temu-secret"\n'
-                'TEMU_ACCESS_TOKEN="temu-token"\n',
+                'TEMU_ACCESS_TOKEN="temu-token"\nEXPRESS_ONE_PASSWORD="eone-secret"\n',
                 encoding="utf-8",
             )
             config = AppConfig.load(root)
@@ -959,9 +1090,11 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(public["client_secret_set"])
             self.assertTrue(public["temu_app_secret_set"])
             self.assertTrue(public["temu_access_token_set"])
+            self.assertTrue(public["express_one_password_set"])
             self.assertNotIn("top-secret", public.values())
             self.assertNotIn("temu-secret", public.values())
             self.assertNotIn("temu-token", public.values())
+            self.assertNotIn("eone-secret", public.values())
 
 
 class ApiTests(unittest.TestCase):

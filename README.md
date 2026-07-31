@@ -89,6 +89,22 @@ használ, ezért nem ütközik sem az Allegro számlázásával, sem a régi Tem
 CSV/XLSX exporttal. Jóváíró bizonylat és nem HUF-os rendelés csak külön
 ellenőrzés után lesz engedélyezhető.
 
+### Temu rendelés feladása Express One-nal
+
+A **Rendelések** képernyőn az „Express One feladás” megmutatja a Temutól
+lekért címzettet és a csomag tömegét. A `FELADÁS` megerősítés után a program
+az Express One `parcel/create_labels` végpontján létrehozza az A4 PDF-címkét,
+elmenti a csomagszámot, majd a Temu `bg.logistics.shipment.confirm`
+végpontján az egész rendelést egy csomagként feladottnak jelöli.
+
+A Temuhoz tartozó Express One fuvarozóazonosítót alapból a
+`bg.logistics.companies.get` régiós listából keresi ki. Ha a fiók más néven
+adja vissza a szolgáltatót, a carrier ID kézzel is rögzíthető. A címke a
+rendeléssorból megnyitható, a pillanatnyi nyomkövetés pedig közvetlenül az
+Express One API-ból kérhető le. Ha a címke létrejött, de a Temu visszaírása
+hibázik, az újrapróbálás a mentett csomagszámot használja, így nem keletkezik
+második Express One csomag.
+
 Automata tesztek:
 
 ```powershell

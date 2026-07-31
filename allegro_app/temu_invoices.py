@@ -117,6 +117,7 @@ class TemuInvoiceService:
         result = self.temu._result(response)
         page_items = result.get("pageItems") if isinstance(result.get("pageItems"), list) else []
         local = self.database.list_temu_order_invoices()
+        shipments = self.database.list_temu_shipments()
         rows: list[dict] = []
         for entry in page_items:
             if not isinstance(entry, dict):
@@ -127,6 +128,7 @@ class TemuInvoiceService:
                 continue
             lines = entry.get("orderList") if isinstance(entry.get("orderList"), list) else []
             invoices = local.get(order_id, [])
+            shipment = shipments.get(order_id, {})
             status = "none"
             if invoices and all(row.get("status") == "uploaded" for row in invoices):
                 status = "uploaded"
@@ -145,6 +147,10 @@ class TemuInvoiceService:
                 "invoice_status": status,
                 "invoice_numbers": [str(row.get("invoice_number", "")) for row in invoices if row.get("invoice_number")],
                 "invoice_error": next((str(row.get("error")) for row in invoices if row.get("error")), ""),
+                "shipment_status": str(shipment.get("status", "none")),
+                "parcel_number": str(shipment.get("parcel_number", "")),
+                "shipment_error": str(shipment.get("error", "") or ""),
+                "label_ready": bool(shipment.get("label_path")),
             })
         return rows
 
