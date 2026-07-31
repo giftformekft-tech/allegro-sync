@@ -72,6 +72,8 @@ def build_temu_v3_payload(products: list[dict[str, Any]], options: dict[str, Any
         raise ValueError("Válassz legalább egy termékváltozatot.")
     if len(products) > 500:
         raise ValueError("Egy Temu-termék legfeljebb 500 SKU-t tartalmazhat.")
+    if any(str(row.get("marketplace", "allegro")) != "temu_api_v3" for row in products):
+        raise ValueError("A Temu API-ba csak a külön Temu API exportból importált termék tölthető fel.")
 
     parent_ids = {str(row.get("parent_sku") or row.get("name") or "").strip() for row in products}
     if len(parent_ids) != 1:

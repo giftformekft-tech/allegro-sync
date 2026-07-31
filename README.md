@@ -41,6 +41,12 @@ pedig a megadott külső kategórianévből ajánlja. A felület ellenőrzi a k�
 nyilvános HTTPS URL-ként kerülnek át; külön képfeltöltési lépés nincs.
 Részletek: [`docs/temu-v3-product-upload.md`](docs/temu-v3-product-upload.md).
 
+A WooCommerce-bővítményben ehhez külön **Temu API Export** menüpont tartozik.
+Ez nem az Allegro export és nem a régi, kézi Temu CSV/XLSX export. A Temu API
+fájl `marketplace=temu_api_v3` jelölést és `TEMU-` előtagú SKU-kat használ;
+az alkalmazás platformonként szűri az importált termékeket, így a két
+marketplace adatai nem írják felül és nem ajánlják fel egymást.
+
 1. **Beállítások:** add meg a sandbox Client ID-t, Client Secretet és a
    szabályos User-Agentet.
 2. **Kapcsolatok:** teszteld az alkalmazást, majd csatlakoztasd az eladói fiókot.

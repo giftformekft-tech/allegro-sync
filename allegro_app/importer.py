@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 
 COLUMNS = {
+    "marketplace": ("marketplace", "export_target", "platform"),
     "sku": ("sku", "cikkszám", "cikkszam"),
     "parent_sku": ("parent_sku", "alap_sku", "fő sku", "fo_sku"),
     "name": ("name", "termék neve", "termek neve", "név", "nev"),
@@ -28,6 +29,7 @@ COLUMNS = {
     "ai_content": ("ai_content", "ai"),
     "length_cm": ("length_cm", "hossz_cm", "hossz (cm)", "hosszúság", "hosszusag"),
     "width_cm": ("width_cm", "szelesseg_cm", "szélesség (cm)", "szélesség", "szelesseg"),
+    "temu_category_name": ("temu_category_name", "temu kategória", "temu kategoria"),
 }
 REQUIRED = ("sku", "name", "type", "color", "size", "price_huf", "stock", "image_url")
 
@@ -149,6 +151,9 @@ def parse_csv(content: str) -> list[dict]:
         image_url = get("image_url")
         common_image_url = get("common_image_url")
         weight_g = get("weight_g")
+        marketplace = _normal(get("marketplace")) or "allegro"
+        if marketplace not in {"allegro", "temu_api_v3"}:
+            problems.append("Ismeretlen exportcél; csak allegro vagy temu_api_v3 engedélyezett.")
 
         if not name:
             problems.append("Hiányzó terméknév.")
@@ -198,6 +203,8 @@ def parse_csv(content: str) -> list[dict]:
             "image_url": image_url,
             "common_image_url": common_image_url,
             "weight_g": weight_g,
+            "marketplace": marketplace,
+            "temu_category_name": get("temu_category_name"),
             "length_cm": length_cm,
             "width_cm": width_cm,
             "problems": problems,

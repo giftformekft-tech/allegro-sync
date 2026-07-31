@@ -72,7 +72,7 @@ async function loadDashboard(){
 
 async function loadProducts(){
   try{
-    const q=encodeURIComponent($('#productSearch').value.trim()); const data=await api(`/api/products?q=${q}`); const rows=data.products;
+    const q=encodeURIComponent($('#productSearch').value.trim());const marketplace=activePlatform==='temu'?'temu_api_v3':'allegro'; const data=await api(`/api/products?q=${q}&marketplace=${marketplace}`); const rows=data.products;
     $('#productResultCount').textContent=`${rows.length} találat`; $('#navProductCount').textContent=rows.length;
     $('#productEmpty').classList.toggle('hidden',rows.length>0);
     $('#productRows').innerHTML=rows.map(row=>`<tr><td><div class="product-cell">${row.image_url?`<img class="product-thumb" src="${escapeHtml(row.image_url)}" alt="" loading="lazy">`:'<div class="product-thumb"></div>'}<div><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(row.name)}</small></div></div></td><td><strong>${escapeHtml(row.sku)}</strong><small>${escapeHtml(row.parent_sku)}</small></td><td>${escapeHtml(row.color)} · ${escapeHtml(row.size)}</td><td><strong>${formatNumber(Number(row.price_huf))} Ft</strong></td><td>${formatNumber(row.stock)}</td><td><span class="badge ${row.status==='inactive'?'good':'neutral'}">${row.status==='inactive'?'Inaktív az Allegrón':'Piszkozat'}</span>${row.allegro_offer_id?`<small>${escapeHtml(row.allegro_offer_id)}</small>`:''}</td></tr>`).join('');
@@ -95,7 +95,7 @@ function renderTemuV3VariantRows(){
   const products=selectedTemuFamilyProducts();const rows=new Map();products.forEach(product=>{const key=`${product.type}\u0000${product.color}`;if(!rows.has(key))rows.set(key,[]);rows.get(key).push(product)});temuVariantGroups=[...rows.values()];
   $('#temuVariantRows').innerHTML=temuVariantGroups.length?temuVariantGroups.map((group,index)=>{const first=group[0];const sizes=[...new Set(group.map(item=>item.size).filter(Boolean))];const stock=group.reduce((sum,item)=>sum+Number(item.stock||0),0);return `<label class="temu-variant-row"><input type="checkbox" data-temu-row-index="${index}" checked>${first.image_url?`<img src="${escapeHtml(first.image_url)}" alt="" loading="lazy">`:'<span class="temu-variant-image"></span>'}<span><strong>${escapeHtml(first.type||'Termék')}</strong><small>${escapeHtml(first.color||'Nincs szín')}</small></span><span class="temu-size-chips">${sizes.map(size=>`<span>${escapeHtml(size)}</span>`).join('')}</span><span class="temu-variant-stock">${formatNumber(stock)} db</span></label>`}).join(''):'<div class="wizard-empty">Ehhez a termékcsaládhoz nincs importált variáns.</div>';
   const commonImages=[...new Set(products.map(item=>item.common_image_url).filter(Boolean))];const common=$('#temuCommonImage');common.classList.toggle('empty',!commonImages.length);common.innerHTML=commonImages.length?`<img src="${escapeHtml(commonImages[0])}" alt="" loading="lazy"><div><strong>Közös termékkép</strong><small>${commonImages.length===1?'Egyszer kerül a Temu galériába.':`${commonImages.length} különböző kép van az importban; ellenőrizd a Woo terméket.`}</small></div>`:'<span class="temu-common-image-preview"></span><div><strong>Nincs közös termékkép</strong><small>A variánsképek ettől még közvetlen URL-lel feltölthetők.</small></div>';
-  if(products.length){$('#temuGoodsName').value=products[0].name||products[0].title||'';$('#temuExternalCategory').value=temuSuggestedCategory(products)}
+  if(products.length){$('#temuGoodsName').value=products[0].name||products[0].title||'';$('#temuExternalCategory').value=products[0].temu_category_name||temuSuggestedCategory(products)}
   $('#temuSelectionWrap').classList.add('hidden');
 }
 function selectedTemuV3Products(){return temuVariantGroups.filter((_group,index)=>$(`[data-temu-row-index="${index}"]`)?.checked).flat()}
@@ -109,7 +109,7 @@ function renderTemuUploads(rows){
 }
 async function loadTemuUploads(){try{const data=await api('/api/temu/uploads');renderTemuUploads(data.uploads||[])}catch(error){toast(error.message,'error')}}
 async function loadTemuV3Upload(){
-  try{const [products,settings,uploads]=await Promise.all([api('/api/products'),api('/api/settings'),api('/api/temu/uploads')]);temuProducts=products.products;renderTemuProductFamilies();renderTemuUploads(uploads.uploads||[]);if(!settings.temu_ready)toast('A feltöltéshez add meg a Temu App Key, App Secret és Access Token értékét a Beállításokban.','error')}catch(error){toast(error.message,'error')}
+  try{const [products,settings,uploads]=await Promise.all([api('/api/products?marketplace=temu_api_v3'),api('/api/settings'),api('/api/temu/uploads')]);temuProducts=products.products;renderTemuProductFamilies();renderTemuUploads(uploads.uploads||[]);if(!temuProducts.length)toast('Előbb készíts külön Temu API Export CSV-t a Woo-bővítményben, majd importáld ide.','error');if(!settings.temu_ready)toast('A feltöltéshez add meg a Temu App Key, App Secret és Access Token értékét a Beállításokban.','error')}catch(error){toast(error.message,'error')}
 }
 async function previewTemuV3Selection(){
   try{const data=await api('/api/temu/products/preview',{method:'POST',body:JSON.stringify(temuV3Request())});$('#temuSelectionPayload').textContent=JSON.stringify(data.payload,null,2);$('#temuSelectionWrap').classList.remove('hidden');toast(`A V3 kérés rendben: ${data.summary.sku_count} SKU, ${data.summary.image_count} kép. Még semmit nem küldtünk a Temunak.`,'success')}catch(error){toast(error.message,'error')}
@@ -123,7 +123,7 @@ async function refreshTemuUpload(id){
 async function loadUpload(){
   if(activePlatform==='temu'){loadTemuV3Upload();return}
   try{
-    const [products,settings,templates]=await Promise.all([api('/api/products'),api('/api/settings'),api('/api/templates')]);uploadProducts=products.products;uploadTemplates=templates.templates;
+    const [products,settings,templates]=await Promise.all([api('/api/products?marketplace=allegro'),api('/api/settings'),api('/api/templates')]);uploadProducts=products.products;uploadTemplates=templates.templates;
     const select=$('#offerProduct');const previous=select.value;select.innerHTML='<option value="">Válassz importált terméket…</option>'+uploadProducts.map(p=>`<option value="${p.id}">${escapeHtml(p.title)} · ${escapeHtml(p.sku)}</option>`).join('');if(previous)select.value=previous;
     renderTemplateOptions(activeTemplate?.id);
     $('#uploadEnvironment').textContent=settings.environment==='production'?'ÉLES':'SANDBOX';$('#uploadEnvironment').classList.toggle('production',settings.environment==='production');
@@ -243,7 +243,8 @@ async function previewFile(file){
 }
 function renderPreview(data){
   currentImportId=data.import_id; const s=data.summary; $('#previewCard').classList.remove('hidden');
-  $('#previewSummary').innerHTML=`<span>${s.total} sor</span><span class="ok">${s.valid} megfelelő</span><span class="bad">${s.invalid} hibás · ${s.errors} hiba</span>`;
+  const targets=[...new Set(data.rows.map(row=>row.marketplace).filter(Boolean))];const targetLabel=targets.length===1?(targets[0]==='temu_api_v3'?'Temu API V3':'Allegro'):'Vegyes / hibás export';
+  $('#previewSummary').innerHTML=`<span>${escapeHtml(targetLabel)}</span><span>${s.total} sor</span><span class="ok">${s.valid} megfelelő</span><span class="bad">${s.invalid} hibás · ${s.errors} hiba</span>`;
   $('#commitCount').textContent=`${s.valid} megfelelő sor`; $('#commitImport').disabled=s.valid===0;
   $('#previewRows').innerHTML=data.rows.map(row=>`<tr><td>${row.line}</td><td><strong>${escapeHtml(row.title||row.name)}</strong><small>${escapeHtml(row.name)}</small></td><td>${escapeHtml(row.sku)}</td><td>${formatNumber(Number(row.price_huf))} Ft</td><td>${formatNumber(row.stock)}</td><td>${row.problems.length?`<div class="problem-list">${row.problems.map(escapeHtml).join('<br>')}</div>`:'<span class="badge good">Rendben</span>'}</td></tr>`).join('');
   $('#previewCard').scrollIntoView({behavior:'smooth',block:'start'});

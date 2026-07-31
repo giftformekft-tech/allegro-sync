@@ -40,6 +40,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS products (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     sku TEXT NOT NULL UNIQUE,
+                    marketplace TEXT NOT NULL DEFAULT 'allegro',
                     parent_sku TEXT NOT NULL,
                     name TEXT NOT NULL,
                     title TEXT NOT NULL,
@@ -62,6 +63,7 @@ class Database:
                     allegro_offer_id TEXT,
                     temu_goods_id TEXT,
                     temu_status TEXT NOT NULL DEFAULT '',
+                    temu_category_name TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS import_batches (
@@ -132,6 +134,7 @@ class Database:
             )
             self._ensure_columns(db, "products", {
                 "description": "TEXT NOT NULL DEFAULT ''",
+                "marketplace": "TEXT NOT NULL DEFAULT 'allegro'",
                 "common_image_url": "TEXT NOT NULL DEFAULT ''",
                 "weight_g": "TEXT NOT NULL DEFAULT ''",
                 "brand": "TEXT NOT NULL DEFAULT ''",
@@ -143,6 +146,7 @@ class Database:
                 "allegro_offer_id": "TEXT",
                 "temu_goods_id": "TEXT",
                 "temu_status": "TEXT NOT NULL DEFAULT ''",
+                "temu_category_name": "TEXT NOT NULL DEFAULT ''",
             })
 
     @staticmethod
@@ -222,11 +226,12 @@ class Database:
                 row = json.loads(record["payload"])
                 db.execute(
                     """INSERT INTO products
-                    (sku, parent_sku, name, title, type, color, size, price_huf, stock, image_url,
-                     common_image_url, weight_g, description, brand, material, ai_content, length_cm, width_cm, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                    (sku, marketplace, parent_sku, name, title, type, color, size, price_huf, stock, image_url,
+                     common_image_url, weight_g, description, brand, material, ai_content, length_cm, width_cm,
+                     temu_category_name, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
                     ON CONFLICT(sku) DO UPDATE SET
-                      parent_sku=excluded.parent_sku, name=excluded.name, title=excluded.title,
+                      marketplace=excluded.marketplace, parent_sku=excluded.parent_sku, name=excluded.name, title=excluded.title,
                       type=excluded.type, color=excluded.color, size=excluded.size,
                       price_huf=excluded.price_huf, stock=excluded.stock,
                       image_url=excluded.image_url, common_image_url=excluded.common_image_url,
@@ -234,14 +239,16 @@ class Database:
                       description=excluded.description,
                       brand=excluded.brand, material=excluded.material, ai_content=excluded.ai_content,
                       length_cm=excluded.length_cm, width_cm=excluded.width_cm,
+                      temu_category_name=excluded.temu_category_name,
                       updated_at=excluded.updated_at""",
                     (
-                        row["sku"], row["parent_sku"], row["name"], row["title"], row["type"],
+                        row["sku"], row.get("marketplace", "allegro"), row["parent_sku"], row["name"], row["title"], row["type"],
                         row["color"], row["size"], row["price_huf"], row["stock"],
                         row["image_url"], row.get("common_image_url", ""), row.get("weight_g", ""),
                         row.get("description", ""), row.get("brand", ""),
                         row.get("material", ""), 1 if row.get("ai_content") else 0,
-                        row.get("length_cm", ""), row.get("width_cm", ""), now_iso(),
+                        row.get("length_cm", ""), row.get("width_cm", ""),
+                        row.get("temu_category_name", ""), now_iso(),
                     ),
                 )
             db.execute("UPDATE import_batches SET status = 'committed' WHERE id = ?", (import_id,))
@@ -249,14 +256,26 @@ class Database:
         self.add_activity("import", f"{count} termékváltozat importálva: {batch['filename']}")
         return count
 
-    def list_products(self, search: str = "") -> list[dict[str, Any]]:
+    def list_products(self, search: str = "", marketplace: str = "") -> list[dict[str, Any]]:
         with self.connect() as db:
-            if search:
+            if search and marketplace:
+                needle = f"%{search}%"
+                rows = db.execute(
+                    """SELECT * FROM products WHERE marketplace = ? AND (sku LIKE ? OR name LIKE ? OR title LIKE ?)
+                    ORDER BY updated_at DESC LIMIT 250""",
+                    (marketplace, needle, needle, needle),
+                ).fetchall()
+            elif search:
                 needle = f"%{search}%"
                 rows = db.execute(
                     """SELECT * FROM products WHERE sku LIKE ? OR name LIKE ? OR title LIKE ?
                     ORDER BY updated_at DESC LIMIT 250""",
                     (needle, needle, needle),
+                ).fetchall()
+            elif marketplace:
+                rows = db.execute(
+                    "SELECT * FROM products WHERE marketplace = ? ORDER BY updated_at DESC LIMIT 250",
+                    (marketplace,),
                 ).fetchall()
             else:
                 rows = db.execute("SELECT * FROM products ORDER BY updated_at DESC LIMIT 250").fetchall()

@@ -4,6 +4,17 @@ Az alkalmazás termékfeltöltési útvonala a hivatalos `temu.local.goods.v3.ad
 metódust használja. A korábbi WooCommerce Temu CSV/XLSX export ettől független,
 változatlan biztonsági megoldás marad.
 
+A WooCommerce-bővítmény három külön exportútvonalat tart fenn:
+
+- a meglévő Allegro exportot csak az Allegro-folyamat olvassa;
+- a meglévő Temu CSV/XLSX továbbra is kézi tartalék;
+- az új Temu API Export kizárólag ehhez a V3 modulhoz készít CSV-t.
+
+Az API-fájl `marketplace=temu_api_v3` jelölést, külön Temu-kategórianevet és
+`TEMU-` előtagú termék/SKU azonosítókat tartalmaz. Emiatt egy Allegro-import
+nem tud Temu-termékként megjelenni, és a Temu-import sem írja felül az Allegro
+SKU-kat.
+
 Hivatalos források:
 
 - [Product Publishing API V3 Integration Guide](https://partner.temu.com/documentation?menu_code=fb16b05f7a904765aac4af3a24b87d4a&sub_menu_code=d2be183c4ebe4f06b232792f0ee53310)
@@ -32,4 +43,3 @@ beállítható közös kép a termék galériájának elejére kerül.
 Az előnézet csak helyben validál és payloadot készít. A tényleges feltöltéshez a
 `FELTÖLTÉS` megerősítés szükséges. Minden próbálkozás bekerül a helyi naplóba. A
 visszakapott `goodsId` alapján a felület a publikálási állapotot is le tudja kérni.
-

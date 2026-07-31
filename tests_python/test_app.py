@@ -38,6 +38,10 @@ TEST-POLO-S;TEST;Vidám nyári minta;<p>Pamut póló.</p>;polo;Póló;Fekete;S;5
 HIBAS;TEST;A;;polo;Póló;Kék;M;0;0;rossz-url;;;
 """
 
+TEMU_SAMPLE = """marketplace;sku;parent_sku;name;description;type;type_label;color;size;price_huf;stock;image_url;temu_common_image_url;weight_g;temu_category_name
+temu_api_v3;TEMU-TEST-POLO-S;TEMU-TEST;Vidám nyári minta;<p>Pamut póló.</p>;ferfi-polo;Férfi póló;Fekete;S;5990;20;https://example.com/a.webp;https://example.com/common.webp;180;Men's Clothing / T-Shirts
+"""
+
 
 def sample_order() -> dict:
     return {
@@ -94,7 +98,14 @@ class CsvTests(unittest.TestCase):
         self.assertEqual("70", rows[0]["length_cm"])
         self.assertEqual("50", rows[0]["width_cm"])
         self.assertEqual("https://example.com/common.webp", rows[0]["common_image_url"])
+        self.assertEqual("allegro", rows[0]["marketplace"])
         self.assertEqual(4, len(rows[1]["problems"]))
+
+    def test_temu_api_export_is_detected_separately(self) -> None:
+        rows = parse_csv(TEMU_SAMPLE)
+        self.assertEqual("temu_api_v3", rows[0]["marketplace"])
+        self.assertEqual("TEMU-TEST-POLO-S", rows[0]["sku"])
+        self.assertEqual("Men's Clothing / T-Shirts", rows[0]["temu_category_name"])
 
     def test_missing_required_column_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Hiányzó kötelező"):
@@ -123,6 +134,8 @@ class DatabaseTests(unittest.TestCase):
             finally:
                 connection.close()
             self.assertIn("common_image_url", columns)
+            self.assertIn("marketplace", columns)
+            self.assertIn("temu_category_name", columns)
 
     def test_commit_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -135,6 +148,16 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual("70", db.list_products()[0]["length_cm"])
             self.assertEqual("50", db.list_products()[0]["width_cm"])
             self.assertEqual("https://example.com/common.webp", db.list_products()[0]["common_image_url"])
+
+    def test_marketplace_imports_are_listed_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "state.sqlite")
+            allegro_id = db.create_preview("allegro.csv", parse_csv(SAMPLE))
+            temu_id = db.create_preview("temu-api.csv", parse_csv(TEMU_SAMPLE))
+            db.commit_import(allegro_id)
+            db.commit_import(temu_id)
+            self.assertEqual(["TEST-POLO-S"], [row["sku"] for row in db.list_products(marketplace="allegro")])
+            self.assertEqual(["TEMU-TEST-POLO-S"], [row["sku"] for row in db.list_products(marketplace="temu_api_v3")])
 
     def test_offer_template_can_be_saved_updated_and_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -697,6 +720,7 @@ class TemuProductTests(unittest.TestCase):
     @staticmethod
     def products() -> list[dict]:
         base = {
+            "marketplace": "temu_api_v3",
             "parent_sku": "POLO-ROBOT",
             "name": "Robot mintás pamut póló",
             "type": "Férfi póló",
@@ -738,6 +762,12 @@ class TemuProductTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "HTTPS-kép"):
             build_temu_v3_payload(products, {"category_name": "T-Shirts"})
 
+    def test_v3_payload_rejects_an_allegro_import(self) -> None:
+        products = self.products()
+        products[0]["marketplace"] = "allegro"
+        with self.assertRaisesRegex(ValueError, "külön Temu API export"):
+            build_temu_v3_payload(products, {"category_name": "T-Shirts"})
+
     def test_service_creates_upload_and_refreshes_publish_status(self) -> None:
         class Client:
             def __init__(self):
@@ -753,7 +783,7 @@ class TemuProductTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "state.sqlite")
-            import_id = database.create_preview("sample.csv", parse_csv(SAMPLE))
+            import_id = database.create_preview("temu-api.csv", parse_csv(TEMU_SAMPLE))
             database.commit_import(import_id)
             product_id = database.list_products()[0]["id"]
             client = Client()

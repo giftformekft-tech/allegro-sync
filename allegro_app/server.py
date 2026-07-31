@@ -115,7 +115,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(data)
             elif parsed.path == "/api/products":
                 query = urllib.parse.parse_qs(parsed.query)
-                self._json({"products": self.app.database.list_products(query.get("q", [""])[0])})
+                self._json({"products": self.app.database.list_products(
+                    query.get("q", [""])[0], query.get("marketplace", [""])[0]
+                )})
             elif parsed.path == "/api/templates":
                 self._json({"templates": self.app.database.list_offer_templates()})
             elif parsed.path == "/api/categories/suggest":
