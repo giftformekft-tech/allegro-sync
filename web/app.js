@@ -17,6 +17,8 @@ let temuVariantGroups = [];
 let selectedTemuInvoiceOrder = '';
 let selectedTemuShipmentOrder = '';
 let temuOrders = [];
+let productsPage = 1;
+let productsPerPage = 25;
 
 async function api(path, options={}) {
   const response = await fetch(path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
@@ -85,13 +87,29 @@ async function loadDashboard(){
   }catch(error){toast(error.message,'error')}
 }
 
-async function loadProducts(){
+async function loadProducts(page=productsPage){
   try{
-    const q=encodeURIComponent($('#productSearch').value.trim());const marketplace=activePlatform==='temu'?'temu_api_v3':'allegro'; const data=await api(`/api/products?q=${q}&marketplace=${marketplace}`); const rows=data.products;
+    productsPage=Math.max(1,Number(page)||1);productsPerPage=Number($('#productPageSize')?.value||productsPerPage);const q=encodeURIComponent($('#productSearch').value.trim());const marketplace=activePlatform==='temu'?'temu_api_v3':'allegro'; const data=await api(`/api/products?q=${q}&marketplace=${marketplace}&page=${productsPage}&per_page=${productsPerPage}`); const rows=data.products;const pagination=data.pagination||{page:productsPage,per_page:productsPerPage,total:rows.length,total_pages:rows.length?1:0};
     $('#productResultCount').textContent=`${rows.length} találat`; $('#navProductCount').textContent=rows.length;
     $('#productEmpty').classList.toggle('hidden',rows.length>0);
     $('#productRows').innerHTML=rows.map(row=>`<tr><td><div class="product-cell">${row.image_url?`<img class="product-thumb" src="${escapeHtml(row.image_url)}" alt="" loading="lazy">`:'<div class="product-thumb"></div>'}<div><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(row.name)}</small></div></div></td><td><strong>${escapeHtml(row.sku)}</strong><small>${escapeHtml(row.parent_sku)}</small></td><td>${escapeHtml(row.color)} · ${escapeHtml(row.size)}</td><td><strong>${formatNumber(Number(row.price_huf))} Ft</strong></td><td>${formatNumber(row.stock)}</td><td><span class="badge ${row.status==='inactive'?'good':'neutral'}">${row.status==='inactive'?'Inaktív az Allegrón':'Piszkozat'}</span>${row.allegro_offer_id?`<small>${escapeHtml(row.allegro_offer_id)}</small>`:''}</td></tr>`).join('');
+    $('#productResultCount').textContent=`${formatNumber(Number(pagination.total||0))} találat`; $('#navProductCount').textContent=Number(pagination.total||0);
+    renderProductPagination(pagination);
   }catch(error){toast(error.message,'error')}
+}
+
+function renderProductPagination(pagination){
+  const target=$('#productPagination');if(!target)return;
+  const total=Number(pagination.total||0),totalPages=Number(pagination.total_pages||0),current=Math.min(Math.max(1,Number(pagination.page)||1),Math.max(1,totalPages));
+  if(!total){target.innerHTML='';return}
+  if(totalPages<=1){target.innerHTML=`<span class="product-pagination-info">${formatNumber(total)} term&eacute;k</span>`;return}
+  const numbers=[];
+  if(totalPages<=7){for(let i=1;i<=totalPages;i++)numbers.push(i)}
+  else if(current<=5){numbers.push(1,2,3,4,5,'…',totalPages-2,totalPages-1,totalPages)}
+  else if(current>=totalPages-4){numbers.push(1,2,3,'…',totalPages-4,totalPages-3,totalPages-2,totalPages-1,totalPages)}
+  else{numbers.push(1,2,3,'…',current-1,current,current+1,'…',totalPages-2,totalPages-1,totalPages)}
+  const buttons=numbers.map(number=>number==='…'?'<span class="product-pagination-ellipsis">…</span>':`<button type="button" class="${number===current?'active':''}" data-product-page="${number}" aria-label="${number}. oldal">${number}</button>`).join('');
+  target.innerHTML=`<span class="product-pagination-info">${current}. oldal / ${totalPages} &middot; ${formatNumber(total)} term&eacute;k</span><div class="product-pagination-buttons"><button type="button" data-product-page="${current-1}" ${current===1?'disabled':''} aria-label="Előző oldal">&lsaquo;</button>${buttons}<button type="button" data-product-page="${current+1}" ${current===totalPages?'disabled':''} aria-label="Következő oldal">&rsaquo;</button></div>`;
 }
 
 function categoryTrail(item){const names=[];let current=item;while(current){if(current.name)names.unshift(current.name);current=current.parent}return names.join(' / ')}
@@ -464,13 +482,14 @@ async function pollLogin(code){try{const data=await api('/api/auth/device/poll',
 
 document.addEventListener('click',event=>{const go=event.target.closest('[data-go]');if(go)navigate(go.dataset.go);const nav=event.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const category=event.target.closest('[data-category-id]');if(category){activeTemplate=null;$('#offerTemplate').value='';$('#templateName').value='';inspectCategory(category.dataset.categoryId,null)}const invoice=event.target.closest('[data-invoice-order]');if(invoice)createInvoice(invoice.dataset.invoiceOrder,invoice);const temuRefresh=event.target.closest('[data-temu-refresh]');if(temuRefresh)refreshTemuUpload(temuRefresh.dataset.temuRefresh)});
 document.addEventListener('change',event=>{const dynamic=event.target.closest('[data-dynamic-param]');if(dynamic){const field=$$('[data-parameter]',$('#parameterFields')).find(item=>item.dataset.parameter===dynamic.dataset.dynamicParam);if(field&&dynamic.checked)field.value=field.dataset.suggested||'';dynamic.closest('.parameter-field').classList.toggle('dynamic',dynamic.checked)}if(dynamic||event.target.closest('[data-parameter]'))refreshConditionalParameters();if(event.target.closest('[data-temu-order-select]'))updateTemuBulkActions()});
+document.addEventListener('click',event=>{const productPage=event.target.closest('[data-product-page]');if(productPage&&!productPage.disabled)loadProducts(Number(productPage.dataset.productPage))});
 document.addEventListener('click',event=>{const preview=event.target.closest('[data-temu-invoice-preview]');if(preview)previewTemuInvoices(preview.dataset.temuInvoicePreview);const approve=event.target.closest('[data-approve-temu-platform]');if(approve)approveTemuPlatformAddress(approve.dataset.approveTemuPlatform,approve);const shipment=event.target.closest('[data-temu-shipment-preview]');if(shipment)previewTemuShipment(shipment.dataset.temuShipmentPreview);const tracking=event.target.closest('[data-temu-tracking]');if(tracking)refreshTemuTracking(tracking.dataset.temuTracking,tracking)});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.view)));
 $('#mobileMenu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 $('#platformSelect').addEventListener('change',event=>setPlatform(event.target.value));
 $('#temuProductFamily').addEventListener('change',renderTemuV3VariantRows);$('#previewTemuSelection').addEventListener('click',previewTemuV3Selection);$('#createTemuProduct').addEventListener('click',createTemuV3Product);$('#refreshTemuUploads').addEventListener('click',loadTemuUploads);
 $('#refreshDashboard').addEventListener('click',loadDashboard);
-let searchTimer;$('#productSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadProducts,250)});
+let searchTimer;$('#productSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadProducts(1),250)});$('#productPageSize').addEventListener('change',()=>loadProducts(1));
 $('#csvFile').addEventListener('change',event=>previewFile(event.target.files[0]));
 const dz=$('#dropzone');['dragenter','dragover'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(name=>dz.addEventListener(name,event=>{event.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',event=>previewFile(event.dataTransfer.files[0]));
 $('#useSample').addEventListener('click',async()=>{try{const response=await fetch('/sample.csv');if(!response.ok)throw new Error('A mintafájl nem érhető el.');const blob=await response.blob();previewFile(new File([blob],'export-minta.csv',{type:'text/csv'}))}catch(error){toast(error.message,'error')}});

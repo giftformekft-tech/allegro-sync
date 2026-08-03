@@ -198,6 +198,20 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(["TEST-POLO-S"], [row["sku"] for row in db.list_products(marketplace="allegro")])
             self.assertEqual(["TEMU-TEST-POLO-S"], [row["sku"] for row in db.list_products(marketplace="temu_api_v3")])
 
+    def test_products_can_be_listed_in_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "state.sqlite")
+            header = SAMPLE.splitlines()[0]
+            content = header + "\n" + "\n".join(
+                f"PAGE-{index};PAGE;PaginĂˇlt pĂłlĂł {index};<p>Pamut pĂłlĂł.</p>;polo;PĂłlĂł;Fekete;S;5990;20;https://example.com/{index}.webp;;;"
+                for index in range(1, 4)
+            )
+            import_id = db.create_preview("pages.csv", parse_csv(content))
+            self.assertEqual(3, db.commit_import(import_id))
+            self.assertEqual(3, db.count_products(marketplace="allegro"))
+            self.assertEqual(2, len(db.list_products(marketplace="allegro", page=1, per_page=2)))
+            self.assertEqual(1, len(db.list_products(marketplace="allegro", page=2, per_page=2)))
+
     def test_committed_import_batch_lists_its_products_and_progress(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             db = Database(Path(directory) / "state.sqlite")
@@ -1359,8 +1373,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(1, preview["summary"]["valid"])
         committed = self.request("/api/import/commit", {"import_id": preview["import_id"]})
         self.assertEqual(1, committed["imported"])
-        products = self.request("/api/products")
+        products = self.request("/api/products?page=1&per_page=25")
         self.assertEqual("TEST-POLO-S", products["products"][0]["sku"])
+        self.assertEqual(1, products["pagination"]["total"])
+        self.assertEqual(1, products["pagination"]["total_pages"])
 
     def test_template_api_flow(self) -> None:
         created = self.request("/api/templates", {

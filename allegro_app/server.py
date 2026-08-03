@@ -127,9 +127,30 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(data)
             elif parsed.path == "/api/products":
                 query = urllib.parse.parse_qs(parsed.query)
-                self._json({"products": self.app.database.list_products(
-                    query.get("q", [""])[0], query.get("marketplace", [""])[0]
-                )})
+                search = query.get("q", [""])[0]
+                marketplace = query.get("marketplace", [""])[0]
+                try:
+                    page = max(1, int(query.get("page", ["1"])[0]))
+                except (TypeError, ValueError):
+                    page = 1
+                try:
+                    per_page = int(query.get("per_page", ["250"])[0])
+                except (TypeError, ValueError):
+                    per_page = 250
+                if per_page not in (25, 50, 100, 250):
+                    per_page = 250
+                total = self.app.database.count_products(search, marketplace)
+                self._json({
+                    "products": self.app.database.list_products(
+                        search, marketplace, page=page, per_page=per_page
+                    ),
+                    "pagination": {
+                        "page": page,
+                        "per_page": per_page,
+                        "total": total,
+                        "total_pages": (total + per_page - 1) // per_page if total else 0,
+                    },
+                })
             elif parsed.path == "/api/imports":
                 query = urllib.parse.parse_qs(parsed.query)
                 self._json({"imports": self.app.database.list_import_batches(

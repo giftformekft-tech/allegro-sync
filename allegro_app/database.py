@@ -297,30 +297,43 @@ class Database:
         self.add_activity("import", f"{count} termékváltozat importálva: {batch['filename']}")
         return count
 
-    def list_products(self, search: str = "", marketplace: str = "") -> list[dict[str, Any]]:
+    @staticmethod
+    def _product_filter(search: str = "", marketplace: str = "") -> tuple[str, list[Any]]:
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if marketplace:
+            clauses.append("marketplace = ?")
+            parameters.append(marketplace)
+        if search:
+            needle = f"%{search}%"
+            clauses.append("(sku LIKE ? OR name LIKE ? OR title LIKE ?)")
+            parameters.extend([needle, needle, needle])
+        return (" WHERE " + " AND ".join(clauses)) if clauses else "", parameters
+
+    def list_products(
+        self,
+        search: str = "",
+        marketplace: str = "",
+        page: int = 1,
+        per_page: int = 250,
+    ) -> list[dict[str, Any]]:
+        page = max(1, int(page))
+        per_page = max(1, min(250, int(per_page)))
+        where, parameters = self._product_filter(search, marketplace)
+        parameters.extend([per_page, (page - 1) * per_page])
         with self.connect() as db:
-            if search and marketplace:
-                needle = f"%{search}%"
-                rows = db.execute(
-                    """SELECT * FROM products WHERE marketplace = ? AND (sku LIKE ? OR name LIKE ? OR title LIKE ?)
-                    ORDER BY updated_at DESC LIMIT 250""",
-                    (marketplace, needle, needle, needle),
-                ).fetchall()
-            elif search:
-                needle = f"%{search}%"
-                rows = db.execute(
-                    """SELECT * FROM products WHERE sku LIKE ? OR name LIKE ? OR title LIKE ?
-                    ORDER BY updated_at DESC LIMIT 250""",
-                    (needle, needle, needle),
-                ).fetchall()
-            elif marketplace:
-                rows = db.execute(
-                    "SELECT * FROM products WHERE marketplace = ? ORDER BY updated_at DESC LIMIT 250",
-                    (marketplace,),
-                ).fetchall()
-            else:
-                rows = db.execute("SELECT * FROM products ORDER BY updated_at DESC LIMIT 250").fetchall()
+            rows = db.execute(
+                "SELECT * FROM products" + where
+                + " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+                parameters,
+            ).fetchall()
         return [dict(row) for row in rows]
+
+    def count_products(self, search: str = "", marketplace: str = "") -> int:
+        where, parameters = self._product_filter(search, marketplace)
+        with self.connect() as db:
+            row = db.execute("SELECT COUNT(*) FROM products" + where, parameters).fetchone()
+        return int(row[0]) if row else 0
 
     def list_import_batches(self, marketplace: str = "allegro") -> list[dict[str, Any]]:
         """Return committed imports with their current product/upload state."""
